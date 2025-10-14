@@ -136,14 +136,26 @@ document.addEventListener('DOMContentLoaded', () => {
       const ts = new Date(b.timestamp).toLocaleString();
       const commission = getCommission(b.bookmaker);
       
-      // Calculate profit with commission
+      // Calculate profit with commission (different for back vs lay)
       let profit = 0;
       let potential = 0;
+      let liability = 0;
+      
       if (b.stake && b.odds) {
-        const grossProfit = (parseFloat(b.stake) * parseFloat(b.odds)) - parseFloat(b.stake);
-        const commissionAmount = commission > 0 ? (grossProfit * commission / 100) : 0;
-        profit = grossProfit - commissionAmount;
-        potential = parseFloat(b.stake) + profit;
+        if (b.isLay) {
+          // LAY BET: You're acting as the bookmaker
+          liability = parseFloat(b.stake) * (parseFloat(b.odds) - 1);
+          profit = parseFloat(b.stake); // Profit if selection loses
+          const commissionAmount = commission > 0 ? (profit * commission / 100) : 0;
+          profit = profit - commissionAmount; // Net profit after commission
+          potential = profit; // Your potential win is the profit
+        } else {
+          // BACK BET: Traditional bet
+          const grossProfit = (parseFloat(b.stake) * parseFloat(b.odds)) - parseFloat(b.stake);
+          const commissionAmount = commission > 0 ? (grossProfit * commission / 100) : 0;
+          profit = grossProfit - commissionAmount;
+          potential = parseFloat(b.stake) + profit;
+        }
       }
       const profitDisplay = b.stake && b.odds ? profit.toFixed(2) : '-';
       const potentialDisplay = b.stake && b.odds ? potential.toFixed(2) : '-';
@@ -151,14 +163,26 @@ document.addEventListener('DOMContentLoaded', () => {
       // Calculate expected value (EV) based on probability and odds, including commission
       let expectedValue = 0;
       if (b.stake && b.odds && b.probability) {
-        const winProb = parseFloat(b.probability) / 100;
-        const grossWinAmount = parseFloat(b.stake) * parseFloat(b.odds);
-        const grossProfit = grossWinAmount - parseFloat(b.stake);
-        const commissionAmount = commission > 0 ? (grossProfit * commission / 100) : 0;
-        const netWinAmount = grossWinAmount - commissionAmount;
-        const loseProb = 1 - winProb;
-        const loseAmount = parseFloat(b.stake);
-        expectedValue = (winProb * netWinAmount) - (loseProb * loseAmount);
+        if (b.isLay) {
+          // LAY BET EV: probability of selection losing × profit - probability of selection winning × liability
+          const selectionLoseProb = 1 - (parseFloat(b.probability) / 100);
+          const selectionWinProb = parseFloat(b.probability) / 100;
+          const profitIfWin = parseFloat(b.stake);
+          const commissionAmount = commission > 0 ? (profitIfWin * commission / 100) : 0;
+          const netProfitIfWin = profitIfWin - commissionAmount;
+          const lossIfLose = parseFloat(b.stake) * (parseFloat(b.odds) - 1);
+          expectedValue = (selectionLoseProb * netProfitIfWin) - (selectionWinProb * lossIfLose);
+        } else {
+          // BACK BET EV: probability of winning × net return - probability of losing × stake
+          const winProb = parseFloat(b.probability) / 100;
+          const grossWinAmount = parseFloat(b.stake) * parseFloat(b.odds);
+          const grossProfit = grossWinAmount - parseFloat(b.stake);
+          const commissionAmount = commission > 0 ? (grossProfit * commission / 100) : 0;
+          const netWinAmount = grossWinAmount - commissionAmount;
+          const loseProb = 1 - winProb;
+          const loseAmount = parseFloat(b.stake);
+          expectedValue = (winProb * netWinAmount) - (loseProb * loseAmount);
+        }
       }
       
       // Add to total EV for all bets
@@ -170,7 +194,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (b.status === 'won') {
           actualPL = profit;
         } else if (b.status === 'lost') {
-          actualPL = -parseFloat(b.stake);
+          if (b.isLay) {
+            // For lay bets, if you lose, you pay the liability
+            actualPL = -(parseFloat(b.stake) * (parseFloat(b.odds) - 1));
+          } else {
+            // For back bets, if you lose, you lose the stake
+            actualPL = -parseFloat(b.stake);
+          }
         }
         // void bets don't affect P/L
       }
@@ -196,7 +226,12 @@ document.addEventListener('DOMContentLoaded', () => {
       } else if (b.status === 'lost') {
         statusBadge = '✗ LOST';
         statusColor = '#dc3545';
-        plDisplay = `-${b.stake || 0}`;
+        if (b.isLay) {
+          // Show liability for lay bets
+          plDisplay = `-${liability.toFixed(2)}`;
+        } else {
+          plDisplay = `-${b.stake || 0}`;
+        }
       } else if (b.status === 'void') {
         statusBadge = '○ VOID';
         statusColor = '#6c757d';

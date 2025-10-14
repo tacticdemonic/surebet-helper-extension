@@ -3,13 +3,13 @@
   if (window.__sbLoggerInjected) return;
   window.__sbLoggerInjected = true;
 
-  // Only run on surebet.com valuebets page OR smarkets.com event pages
+  // Run on surebet.com valuebets page OR any bookmaker site (not Surebet)
   console.log('SB Logger: Script loaded on:', location.hostname, location.pathname);
   
   const isSurebetValuebets = location.hostname.includes('surebet.com') && location.pathname.includes('valuebets');
-  const isSmarketsEvent = location.hostname.includes('smarkets.com') && location.pathname.includes('/event/');
+  const isBookmakerSite = !location.hostname.includes('surebet.com');
   
-  if (!isSurebetValuebets && !isSmarketsEvent) {
+  if (!isSurebetValuebets && !isBookmakerSite) {
     console.log('SB Logger: Not on supported page, exiting');
     return;
   }
@@ -17,7 +17,7 @@
   console.log('SB Logger: ✓ On supported page, continuing initialization');
   
   // Determine which site we're on
-  const onSmarkets = location.hostname.includes('smarkets.com');
+  const onBookmakerSite = isBookmakerSite;
 
   // Bookmaker preset configurations
   // Note: To select only the main version without country codes, just use "Betfair"
@@ -203,6 +203,34 @@
   }
 
   async function saveBet(betData) {
+    console.log('SB Logger: saveBet called with data:', betData);
+    console.log('SB Logger: Odds check - value:', betData.odds, 'type:', typeof betData.odds, 'check result:', (!betData.odds || betData.odds === 0));
+    
+    // If odds not found, prompt for it
+    if (!betData.odds || betData.odds === 0) {
+      console.log('SB Logger: Odds missing, prompting user');
+      const oddsStr = prompt('Enter the odds (decimal format, e.g., 2.5):', '');
+      if (oddsStr === null) return false; // User cancelled
+      
+      const odds = parseFloat(oddsStr.replace(/[^\d.]/g, ''));
+      if (isNaN(odds) || odds <= 1) {
+        alert('Invalid odds');
+        return false;
+      }
+      betData.odds = odds;
+    } else {
+      console.log('SB Logger: Odds already present:', betData.odds);
+    }
+
+    // If market not found, prompt for it
+    if (!betData.market) {
+      const market = prompt('Enter the market/selection (e.g., "Player 1 to win", "Over 2.5 goals"):', '');
+      if (market === null) return false; // User cancelled
+      if (market.trim()) {
+        betData.market = market.trim();
+      }
+    }
+
     // Ask for stake amount
     const stakeStr = prompt('Enter your stake amount:', '');
     if (stakeStr === null) return false; // User cancelled
@@ -212,12 +240,24 @@
       alert('Invalid stake amount');
       return false;
     }
-
     betData.stake = stake;
 
+    // Calculate EV if we have odds and probability (don't prompt, use existing data)
+    if (betData.odds && betData.probability) {
+      const impliedProb = (1 / betData.odds) * 100;
+      if (!betData.overvalue) {
+        betData.overvalue = betData.probability - impliedProb;
+      }
+      // Calculate expected value: (probability * odds * stake) - stake
+      const ev = ((betData.probability / 100) * betData.odds * betData.stake) - betData.stake;
+      betData.expectedValue = ev;
+    }
+
     // Optional note
-    const note = prompt('Optional note:', '') || '';
-    betData.note = note;
+    const note = prompt('Optional note:', betData.note || '') || '';
+    if (note) {
+      betData.note = note;
+    }
     
     // Initialize status as pending
     betData.status = 'pending';
@@ -225,6 +265,8 @@
     // Initialize API retry tracking
     betData.apiRetryCount = 0;
     betData.lastApiCheck = null;
+
+    console.log('SB Logger: Final bet data to save:', betData);
 
     // Save to storage
     return new Promise((resolve) => {
@@ -528,8 +570,16 @@
   }
 
   function injectSaveButtons() {
-    // Find all valuebet rows
-    const rows = document.querySelectorAll('tbody.valuebet_record');
+    // Find the main valuebets table only
+    const mainTable = document.querySelector('table');
+    if (!mainTable) {
+      console.log('SB Logger: Main table not found');
+      return;
+    }
+    
+    // Find all valuebet rows in the main table only
+    const rows = mainTable.querySelectorAll('tbody.valuebet_record');
+    console.log('SB Logger: Found', rows.length, 'valuebet rows in main table');
     
     rows.forEach(row => {
       // Skip if button already injected
@@ -538,6 +588,10 @@
       // Find the first cell with buttons
       const firstCell = row.querySelector('td .d-flex');
       if (!firstCell) return;
+
+      // Try to find a link to the valuebet details
+      const link = row.querySelector('a[href*="/nav/valuebet/prong/"]');
+      let linkUrl = link ? link.href : null;
 
       // Create save button
       const saveBtn = document.createElement('button');
@@ -552,9 +606,16 @@
         saveBtn.disabled = true;
         saveBtn.textContent = '...';
 
-        const betData = parseRowData(row);
+        let betData = null;
+        
+        // Parse from link only
+        if (linkUrl) {
+          console.log('SB Logger: Parsing from link:', linkUrl);
+          betData = parseSurebetLinkData(linkUrl);
+        }
+        
         if (!betData) {
-          showToast('Failed to extract bet data', false);
+          showToast('Failed to extract bet data from link', false);
           saveBtn.disabled = false;
           saveBtn.textContent = '💾 Save';
           return;
@@ -579,13 +640,87 @@
     });
   }
 
+  function parseSurebetLinkData(url) {
+    try {
+      console.log('SB Logger: Parsing Surebet link data from URL');
+      
+      // Extract the JSON data from the URL parameter
+      const urlObj = new URL(url);
+      const jsonBody = urlObj.searchParams.get('json_body[prongs][]');
+      
+      if (!jsonBody) {
+        console.log('SB Logger: No JSON data found in URL');
+        return null;
+      }
+      
+      // Decode and parse the JSON
+      const jsonData = JSON.parse(decodeURIComponent(jsonBody));
+      console.log('SB Logger: Parsed JSON from link:', jsonData);
+      console.log('SB Logger: Raw odds value:', jsonData.value, 'Type:', typeof jsonData.value);
+      
+      const parsedOdds = parseFloat(jsonData.value);
+      console.log('SB Logger: Parsed odds:', parsedOdds, 'isNaN:', isNaN(parsedOdds), 'Final:', parsedOdds || 0);
+      
+      const data = {
+        timestamp: new Date().toISOString(),
+        url: url,
+        id: jsonData.id,
+        odds: parsedOdds || 0,
+        probability: parseFloat((jsonData.probability * 100).toFixed(2)) || 0,
+        overvalue: parseFloat(jsonData.overvalue.toFixed(2)) || 0,
+        bookmaker: jsonData.bk || '',
+        sport: jsonData.sport_id === 22 ? 'Tennis' : (jsonData.sport_id === 15 ? 'Football' : 'Other'),
+        tournament: jsonData.tournament || '',
+        teams: jsonData.teams || [],
+        event: jsonData.teams ? jsonData.teams.join(' vs ') : '',
+        market: jsonData.tr_expanded || jsonData.tr_terse || '',
+        eventTime: jsonData.time || null,
+        commission: parseFloat(jsonData.commission) || 0,
+        bk_probability: parseFloat(jsonData.bk_probability) || 0,
+        bk_margin: parseFloat(jsonData.bk_margin) || 0,
+        isLay: jsonData.type?.back === false || false
+      };
+      
+      // Clean up market text (remove HTML tags)
+      if (data.market) {
+        data.market = data.market.replace(/<[^>]*>/g, '');
+      }
+      
+      // Also check market text for "- lay" suffix
+      if (data.market && data.market.toLowerCase().includes('- lay')) {
+        data.isLay = true;
+      }
+      
+      console.log('SB Logger: Extracted data from link:', data);
+      console.log('SB Logger: Final odds value:', data.odds, 'Type:', typeof data.odds);
+      return data;
+    } catch (err) {
+      console.error('SB Logger: Error parsing Surebet link data', err);
+      return null;
+    }
+  }
+
   function parseSmarketsPageData() {
     try {
-      console.log('SB Logger: Parsing Smarkets page data');
+      console.log('SB Logger: Parsing bookmaker page data');
+      
+      // Try to detect bookmaker from hostname
+      const hostname = location.hostname.toLowerCase();
+      let bookmaker = 'Unknown';
+      if (hostname.includes('smarkets')) bookmaker = 'Smarkets';
+      else if (hostname.includes('betfair')) bookmaker = 'Betfair';
+      else if (hostname.includes('betdaq')) bookmaker = 'Betdaq';
+      else if (hostname.includes('matchbook')) bookmaker = 'Matchbook';
+      else if (hostname.includes('bet365')) bookmaker = 'Bet365';
+      else if (hostname.includes('betway')) bookmaker = 'Betway';
+      else if (hostname.includes('paddypower')) bookmaker = 'Paddy Power';
+      else if (hostname.includes('ladbrokes')) bookmaker = 'Ladbrokes';
+      else bookmaker = hostname.split('.')[0];
+      
       const data = {
         timestamp: new Date().toISOString(),
         url: location.href,
-        bookmaker: 'Smarkets'
+        bookmaker: bookmaker
       };
 
       // Extract event name from page title or h1
@@ -616,6 +751,24 @@
       if (timeMatch) {
         data.eventTime = `${timeMatch[1]}-${timeMatch[2]}-${timeMatch[3]}T${timeMatch[4]}:${timeMatch[5]}:00Z`;
       }
+
+      // Try to find odds buttons on the page (look for back/lay odds)
+      // Smarkets typically shows odds in buttons or clickable elements
+      const oddsButtons = document.querySelectorAll('[class*="odd"], [class*="price"], button[class*="back"], button[class*="lay"]');
+      console.log('SB Logger: Found', oddsButtons.length, 'potential odds elements');
+      
+      // Log some samples for debugging
+      if (oddsButtons.length > 0) {
+        const samples = Array.from(oddsButtons).slice(0, 5).map(btn => ({
+          text: btn.textContent.trim(),
+          classes: btn.className,
+          dataAttrs: Object.keys(btn.dataset)
+        }));
+        console.log('SB Logger: Sample odds elements:', samples);
+      }
+
+      // Add a note that user should manually select market and odds
+      data.note = 'Manual odds entry - please specify market and odds';
 
       console.log('SB Logger: Parsed Smarkets data:', data);
       return data;
@@ -688,7 +841,58 @@
     }
   }
 
-  function injectSaveButtonOnSmarkets() {
+  async function getSurebetDataFromReferrer() {
+    return new Promise((resolve) => {
+      // Check chrome.storage.local for data saved on click
+      chrome.storage.local.get(['pendingBet'], (result) => {
+        if (result.pendingBet) {
+          console.log('SB Logger: Found stored bet data from Surebet click:', result.pendingBet);
+          // Clear it after retrieving
+          chrome.storage.local.remove('pendingBet');
+          resolve(result.pendingBet);
+        } else {
+          console.log('SB Logger: No stored bet data found in storage');
+          console.log('SB Logger: document.referrer =', document.referrer);
+          console.log('SB Logger: window.location.href =', window.location.href);
+          
+          // Try to get data from document.referrer if it's a Surebet link
+          if (document.referrer && document.referrer.includes('/nav/valuebet/prong/')) {
+            console.log('SB Logger: Found Surebet referrer, parsing:', document.referrer);
+            const data = parseSurebetLinkData(document.referrer);
+            if (data) {
+              console.log('SB Logger: Extracted data from referrer:', data);
+              resolve(data);
+              return;
+            }
+          } else if (document.referrer) {
+            console.log('SB Logger: Referrer exists but not a Surebet valuebet link');
+          } else {
+            console.log('SB Logger: No referrer found');
+          }
+          
+          // Try to check if we're in an iframe and parent has Surebet URL
+          try {
+            if (window !== window.top && window.top.location.href.includes('/nav/valuebet/prong/')) {
+              console.log('SB Logger: In iframe with Surebet parent, parsing:', window.top.location.href);
+              const data = parseSurebetLinkData(window.top.location.href);
+              if (data) {
+                console.log('SB Logger: Extracted data from parent frame:', data);
+                resolve(data);
+                return;
+              }
+            }
+          } catch (e) {
+            // Cross-origin access blocked, ignore
+            console.log('SB Logger: Cannot access parent frame (cross-origin)');
+          }
+          
+          resolve(null);
+        }
+      });
+    });
+  }
+
+  async function injectSaveButtonOnSmarkets() {
     // Skip if button already injected
     if (document.querySelector('.sb-logger-save-btn-smarkets')) {
       console.log('SB Logger: Save button already on Smarkets page');
@@ -696,6 +900,9 @@
     }
 
     console.log('SB Logger: Injecting save button on Smarkets page');
+
+    // Try to get data from Surebet click
+    const surebetData = await getSurebetDataFromReferrer();
 
     // Create a floating save button
     const saveBtn = document.createElement('button');
@@ -717,8 +924,8 @@
       box-shadow: 0 4px 12px rgba(0,0,0,0.3);
       transition: all 0.2s;
     `;
-    saveBtn.textContent = '💾 Save Bet';
-    saveBtn.title = 'Click to save the current bet to your log';
+    saveBtn.textContent = surebetData ? '💾 Save Bet (From Surebet)' : '💾 Save Bet';
+    saveBtn.title = surebetData ? 'Save the bet you clicked from Surebet' : 'Click to save the current bet to your log';
 
     saveBtn.addEventListener('mouseenter', () => {
       saveBtn.style.background = '#218838';
@@ -740,7 +947,8 @@
       saveBtn.style.background = '#6c757d';
       saveBtn.textContent = 'Saving...';
 
-      const betData = parseSmarketsPageData();
+      let betData = surebetData || parseSmarketsPageData();
+      
       if (!betData) {
         showToast('Failed to extract bet data from page', false);
         saveBtn.disabled = false;
@@ -866,6 +1074,12 @@
   }
 
   function detectAndInjectIntoPopup() {
+    // Only run on Smarkets or other bookmaker sites, NOT on Surebet
+    if (location.hostname.includes('surebet.com')) {
+      console.log('SB Logger: On Surebet page, skipping popup detection');
+      return;
+    }
+    
     console.log('SB Logger: === Detecting bet popup ===');
     
     // Look for various types of popup/modal containers that might contain bet details
@@ -877,10 +1091,7 @@
       '[class*="Popup"]:not([style*="display: none"])',
       '[class*="overlay"]:not([style*="display: none"])',
       '.bet-details',
-      '[class*="bet-detail"]',
-      '[class*="tooltip"]',
-      '[class*="dropdown"]',
-      '[class*="details"]'
+      '[class*="bet-detail"]'
     ];
 
     // Also try to find any absolutely positioned elements that might be popups
@@ -958,13 +1169,28 @@
       showToast('SB Logger Active!', true, 1500);
     }, 1000);
     
-    // If on Smarkets, inject floating button
-    if (onSmarkets) {
-      console.log('SB Logger: On Smarkets, injecting floating save button');
+    // If on any bookmaker site, inject floating button
+    if (onBookmakerSite) {
+      console.log('SB Logger: On bookmaker site, injecting floating save button');
       setTimeout(injectSaveButtonOnSmarkets, 1000);
-      // Don't do the table row injection on Smarkets
+      // Don't do the table row injection on bookmaker sites
       return;
     }
+    
+    // On Surebet: intercept clicks on valuebet links to store data
+    document.addEventListener('click', (e) => {
+      const link = e.target.closest('a[href*="/nav/valuebet/prong/"]');
+      if (link && link.href) {
+        console.log('SB Logger: Surebet link clicked, storing data for later');
+        const betData = parseSurebetLinkData(link.href);
+        if (betData) {
+          // Store in chrome.storage.local so it persists across tabs
+          chrome.storage.local.set({ pendingBet: betData }, () => {
+            console.log('SB Logger: Bet data stored for bookmaker page:', betData);
+          });
+        }
+      }
+    }, true);
     
     // Initial injection with multiple retry attempts (for Surebet)
     setTimeout(injectSaveButtons, 500);
