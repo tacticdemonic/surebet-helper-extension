@@ -3,7 +3,7 @@
 A powerful browser extension for tracking and analyzing value bets from surebet.com. Save bets with one click, automatically check results, visualize your P/L, and export your data.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Browser](https://img.shields.io/badge/Browser-Chrome%20%7C%20Firefox%20%7C%20Edge-blue)](https://github.com/YOUR_USERNAME/sb-logger-extension)
+[![Browser](https://img.shields.io/badge/Browser-Chrome%20%7C%20Firefox%20%7C%20Edge-blue)](https://github.com/tacticdemonic/sb-logger-extension)
 
 ---
 
@@ -247,7 +247,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [API Setup Guide](sb-logger-extension/API_SETUP.md)
 - [Testing Guide](sb-logger-extension/TESTING.md)
 - [Contributing Guidelines](CONTRIBUTING.md)
-- [Report Issues](https://github.com/YOUR_USERNAME/sb-logger-extension/issues)
+- [Report Issues](https://github.com/tacticdemonic/sb-logger-extension/issues)
 
 ---
 
