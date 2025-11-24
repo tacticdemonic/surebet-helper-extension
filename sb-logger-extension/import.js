@@ -1,5 +1,5 @@
-// Import page script - handles CSV file import from dedicated page
-console.log('📥 Import page loaded v2.1 - Enhanced matching with player name stripping');
+// Import page script - handles CSV and JSON file import from dedicated page
+console.log('📥 Import page loaded v2.2 - Added JSON import support');
 
 const fileInput = document.getElementById('csv-file-input');
 const selectedFilesDiv = document.getElementById('selected-files');
@@ -9,6 +9,28 @@ const cancelBtn = document.getElementById('cancel-btn');
 const resultsDiv = document.getElementById('results');
 
 let selectedFiles = [];
+
+// Detect import type from URL parameter
+const urlParams = new URLSearchParams(window.location.search);
+const importType = urlParams.get('type') || 'csv';
+
+// Update UI based on import type
+if (importType === 'json') {
+  document.getElementById('page-title').textContent = '📥 Import Saved Bets (JSON)';
+  document.getElementById('instructions-title').textContent = 'How to import your saved bets:';
+  document.getElementById('instructions-list').innerHTML = `
+    <li>Export bets from Surebet Helper (📥 Export JSON button)</li>
+    <li>Select your JSON file containing saved bets</li>
+    <li>The extension will merge bets and update any settled results</li>
+    <li>Duplicate bets are detected and skipped automatically</li>
+  `;
+  document.getElementById('file-label').textContent = '📁 Choose JSON File';
+  fileInput.accept = '.json';
+  fileInput.multiple = false;
+} else {
+  fileInput.accept = '.csv';
+  fileInput.multiple = true;
+}
 
 // Listen for file selection
 fileInput.addEventListener('change', (e) => {
@@ -67,13 +89,22 @@ async function importSingleFile(file) {
     
     reader.onload = async (event) => {
       try {
-        const csvText = event.target.result;
-        console.log(`✅ File loaded, length: ${csvText.length}`);
+        const fileText = event.target.result;
+        console.log(`✅ File loaded, length: ${fileText.length}`);
         
-        const plData = parseCSV(csvText, file.name);
-        console.log(`📊 Parsed ${plData.length} settled bets from CSV`);
+        // Detect file type - either JSON or CSV based on importType or file extension
+        const fileExtension = file.name.toLowerCase().endsWith('.json') ? 'json' : 'csv';
+        const currentType = importType === 'json' ? 'json' : fileExtension;
         
-        await processImportedData(plData, file.name);
+        if (currentType === 'json') {
+          console.log('📋 Processing JSON file...');
+          await processImportedJSON(fileText, file.name);
+        } else {
+          console.log('📋 Processing CSV file...');
+          const plData = parseCSV(fileText, file.name);
+          console.log(`📊 Parsed ${plData.length} settled bets from CSV`);
+          await processImportedData(plData, file.name);
+        }
         resolve();
       } catch (error) {
         console.error('❌ Error processing file:', error);
@@ -384,6 +415,175 @@ function parseCSVLine(line) {
   
   result.push(current.trim());
   return result;
+}
+
+// Validate and fix imported bet data (permissive mode)
+function validateImportedBet(bet) {
+  if (!bet || typeof bet !== 'object') return null;
+  
+  // Required fields check
+  if (!bet.event || !bet.odds || bet.stake === undefined || !bet.bookmaker) {
+    console.warn('⚠️ Skipping bet missing required fields:', bet);
+    return null;
+  }
+  
+  // Create clean bet object with type coercion
+  const cleanBet = {
+    ...bet,
+    odds: parseFloat(bet.odds) || 1.01,
+    stake: parseFloat(bet.stake) || 0,
+    probability: parseFloat(bet.probability) || 0,
+    overvalue: parseFloat(bet.overvalue) || 0,
+    isLay: bet.isLay === true || bet.isLay === 'true',
+    status: bet.status || 'pending',
+    event: String(bet.event).trim(),
+    bookmaker: String(bet.bookmaker).trim(),
+    sport: String(bet.sport || '').trim(),
+    tournament: String(bet.tournament || '').trim(),
+    market: String(bet.market || '').trim(),
+    note: String(bet.note || '').trim()
+  };
+  
+  // Ensure identity fields for deduplication
+  ensureBetIdentity(cleanBet);
+  
+  return cleanBet;
+}
+
+// Ensure bet has uid and timestamp for deduplication
+function ensureBetIdentity(bet) {
+  if (!bet.uid) {
+    // Generate UUID v4
+    bet.uid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      const r = Math.random() * 16 | 0;
+      const v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  }
+  if (!bet.timestamp) {
+    bet.timestamp = Date.now();
+  }
+}
+
+// Get unique key for bet (uid or composite key)
+function getBetKey(bet) {
+  return bet.uid || `${bet.id}::${bet.timestamp}`;
+}
+
+// Merge imported bets with existing bets (deduplication)
+function mergeJsonBets(existingBets, importedBets) {
+  const merged = [...existingBets];
+  let addedCount = 0;
+  let updatedCount = 0;
+  let skippedCount = 0;
+  
+  importedBets.forEach(importedBet => {
+    const cleanBet = validateImportedBet(importedBet);
+    if (!cleanBet) {
+      skippedCount++;
+      return;
+    }
+    
+    const importedKey = getBetKey(cleanBet);
+    const existingIndex = merged.findIndex(b => getBetKey(b) === importedKey);
+    
+    if (existingIndex === -1) {
+      // New bet - add it
+      merged.push(cleanBet);
+      addedCount++;
+      console.log(`✅ Added new bet: ${cleanBet.event}`);
+    } else {
+      // Existing bet - check if we should update
+      const existing = merged[existingIndex];
+      
+      // Update if: imported is settled and existing is pending
+      if (cleanBet.status !== 'pending' && existing.status === 'pending') {
+        merged[existingIndex] = {
+          ...existing,
+          ...cleanBet,
+          timestamp: existing.timestamp // Preserve original timestamp
+        };
+        updatedCount++;
+        console.log(`🔄 Updated pending bet with settlement: ${cleanBet.event} - Status: ${cleanBet.status}`);
+      } else {
+        skippedCount++;
+        console.log(`⏭️ Skipped duplicate bet: ${cleanBet.event}`);
+      }
+    }
+  });
+  
+  return { merged, addedCount, updatedCount, skippedCount };
+}
+
+// Process imported JSON file
+async function processImportedJSON(jsonText, filename) {
+  console.log(`📁 Processing JSON file: ${filename}`);
+  
+  try {
+    let importData = JSON.parse(jsonText);
+    
+    // Handle both new export format {bets: [], analysis: {}} and legacy flat array
+    let betsArray = [];
+    if (Array.isArray(importData)) {
+      // Legacy flat array format
+      betsArray = importData;
+      console.log('📋 Detected legacy flat array format');
+    } else if (importData && Array.isArray(importData.bets)) {
+      // New export format with analysis
+      betsArray = importData.bets;
+      console.log('📋 Detected new export format with analysis');
+    } else {
+      throw new Error('Invalid JSON structure: must contain array of bets or {bets: [...]}');
+    }
+    
+    if (!Array.isArray(betsArray) || betsArray.length === 0) {
+      throw new Error('JSON file contains no bets');
+    }
+    
+    console.log(`📊 Processing ${betsArray.length} bets from import file`);
+    
+    // Get existing bets from storage
+    const result = await browser.storage.local.get('bets');
+    const existingBets = result.bets || [];
+    console.log(`📦 Current storage has ${existingBets.length} bets`);
+    
+    // Merge with deduplication
+    const { merged, addedCount, updatedCount, skippedCount } = mergeJsonBets(existingBets, betsArray);
+    
+    console.log(`✅ Import complete: Added ${addedCount}, Updated ${updatedCount}, Skipped ${skippedCount}`);
+    
+    // Write merged bets to storage
+    await browser.storage.local.set({ bets: merged });
+    console.log('💾 Merged bets saved to storage');
+    
+    // Trigger bankroll recalculation
+    try {
+      await browser.runtime.sendMessage({ action: 'recalculateBankroll' });
+    } catch (err) {
+      console.warn('⚠️ Unable to trigger bankroll recalc:', err?.message || err);
+    }
+    
+    // Show success message
+    let message = `✅ Import successful!<br><br><strong>${addedCount}</strong> new bets added`;
+    if (updatedCount > 0) {
+      message += `<br><strong>${updatedCount}</strong> settled bets updated`;
+    }
+    if (skippedCount > 0) {
+      message += `<br><strong>${skippedCount}</strong> duplicates skipped`;
+    }
+    
+    message += `<br><br><button onclick="window.close()">Close & Return to Extension</button>`;
+    
+    showResults(
+      'success',
+      message
+    );
+    
+    console.log(`📥 JSON import completed: ${addedCount} added, ${updatedCount} updated, ${skippedCount} skipped`);
+  } catch (error) {
+    console.error('❌ JSON import error:', error);
+    throw error;
+  }
 }
 
 async function processImportedData(plData, source) {
