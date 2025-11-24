@@ -1261,6 +1261,14 @@ document.addEventListener('DOMContentLoaded', () => {
       document.querySelector('#edit-form [name="isLay"]').checked = bet.isLay || false;
       document.querySelector('#edit-form [name="note"]').value = bet.note || '';
 
+      // Update toggle button text and state
+      const toggleBtn = document.getElementById('edit-toggle-lay-btn');
+      if (toggleBtn) {
+        const isLay = bet.isLay || false;
+        toggleBtn.textContent = isLay ? 'To Back' : 'To Lay';
+        toggleBtn.dataset.isLay = isLay ? 'true' : 'false';
+      }
+
       // Store current bet ID for save
       document.getElementById('edit-form').dataset.betId = betKey;
       document.getElementById('edit-form').dataset.betIndex = bets.indexOf(bet);
@@ -1343,8 +1351,8 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         }
 
-        // Migration: Detect isLay from market name if missing
-        if (b.market && /lay/i.test(b.market) && !b.isLay) {
+        // Migration: Detect isLay from market name if missing (only if not explicitly set)
+        if (b.market && /lay/i.test(b.market) && b.isLay === undefined) {
           console.log('🧹 Backfilling isLay for', b.event);
           b.isLay = true;
           needsCleanup = true;
@@ -2511,6 +2519,9 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       const formData = new FormData(editForm);
+      const toggleBtn = document.getElementById('edit-toggle-lay-btn');
+      const isLay = toggleBtn ? toggleBtn.dataset.isLay === 'true' : (formData.get('isLay') === 'on');
+      
       const updatedFields = {
         bookmaker: formData.get('bookmaker'),
         sport: formData.get('sport'),
@@ -2520,7 +2531,7 @@ document.addEventListener('DOMContentLoaded', () => {
         odds: parseFloat(formData.get('odds')),
         probability: parseFloat(formData.get('probability')),
         stake: parseFloat(formData.get('stake')),
-        isLay: formData.get('isLay') === 'on',
+        isLay: isLay,
         note: formData.get('note')
       };
 
@@ -2533,6 +2544,20 @@ document.addEventListener('DOMContentLoaded', () => {
     cancelEditBtn.addEventListener('click', () => {
       console.log('✏️ Edit cancelled');
       editModal.style.display = 'none';
+    });
+  }
+
+  // Handle toggle lay button in edit modal
+  const editToggleLay = document.getElementById('edit-toggle-lay-btn');
+  if (editToggleLay) {
+    editToggleLay.addEventListener('click', (e) => {
+      e.preventDefault();
+      const isCurrentlyLay = editToggleLay.dataset.isLay === 'true';
+      const newIsLay = !isCurrentlyLay;
+      editToggleLay.dataset.isLay = newIsLay ? 'true' : 'false';
+      editToggleLay.textContent = newIsLay ? 'To Back' : 'To Lay';
+      document.querySelector('#edit-form [name="isLay"]').checked = newIsLay;
+      console.log('✏️ Toggle lay in edit form - new isLay:', newIsLay);
     });
   }
 

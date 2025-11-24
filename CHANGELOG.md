@@ -74,6 +74,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.63.1] - 2025-11-24
+
+### 🐛 Bug Fixes
+- Fixed editing lay bets: added a 'To Lay'/'To Back' toggle to the edit modal and corrected odds validation so lay odds can be saved without HTML5 min constraint preventing submission.
+- Fixed migration logic for `isLay` backfilling so that it only backfills when `isLay` is undefined (preserves explicit user edits).
+
+
 ## [1.0.56] - 2025-11-24
 
 ### 🔧 Configuration Changes

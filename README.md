@@ -94,6 +94,7 @@ A powerful browser extension for tracking and analyzing value bets from surebet.
 1. **Visit** [surebet.com/valuebets](https://surebet.com/valuebets)
 2. **Click** the 💾 Save button on any bet row
 3. **Enter** your stake amount (and optional note)
+4. **Edit**: When editing a bet, use the **To Lay / To Back** toggle in the edit modal to switch the bet type (immediate visual feedback is provided). Lay odds are handled properly even when editing.
 4. **View** all saved bets by clicking the extension icon in your toolbar
 5. **Settle bets** using the ✓ Won, ✗ Lost, or ○ Void buttons
 6. **Analyze** your performance by clicking the 📊 Analysis button
@@ -284,6 +285,7 @@ surebet-helper-extension/
 - Fixed indentation issues in event handler callbacks
 - Added hash-based routing for settings sections (#commission, #kelly, #api, etc.)
 - Disabled floating staking panel injection from contentScript.js
+ - Migration fix: `isLay` backfilling now only runs when the property is undefined so explicit user edits are preserved
 
 #### 📊 Analytics Enhancements
 - CSV export now includes 27 detailed columns
