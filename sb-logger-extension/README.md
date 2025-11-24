@@ -253,40 +253,61 @@ This ensures you only select the exact bookmaker versions you want, without acci
 
 ## Contributing DOM Structures for New Exchanges
 
-The auto-fill feature works by matching CSS selectors to HTML elements on betting slip pages. If you want to add support for a new exchange or fix selectors for an existing one, you can help by contributing DOM structure information!
+We rely on community contributions for maintaining accurate DOM selectors for exchange betting slips. To make it easy, we've added a helper script and a GitHub issue template you can use when submitting a new exchange or fixing selectors.
 
-### How to Contribute:
+### Quick & Recommended (Best) Way — Use the Console Helper Script
 
-1. **Navigate to the betting slip** on the exchange you want to support
-2. **Open browser DevTools** (F12 on most browsers)
-3. **Run this diagnostic script** in the Console tab:
+1. Open the betting slip for the exchange you want to support (e.g., Betfair) in your browser.
+2. Open DevTools (F12) → Console.
+3. Copy the helper script from `tools/collect_betslip_info.js` in this repo and paste it into the Console, then press Enter.
+   - The script will collect visible stake inputs, betting slip containers, and relevant data attributes.
+   - It will copy a JSON payload to your clipboard containing the page URL, detected inputs, container HTML, data attributes, and your user agent.
+4. Create a new GitHub issue using the **Add Exchange Support** template (click "New issue" → "Add Exchange Support") and paste the copied JSON into the "Console output" field.
+
+#### Bookmarklet (one-click issue creation)
+
+If you prefer a one-click approach, use our bookmarklet generator to create a bookmark that collects the necessary JSON and opens a prefilled GitHub issue:
+
+1. Open `sb-logger-extension/tools/create_issue_bookmarklet.js` in this repo and copy the single `javascript:(function(){...})();` string printed by the script.
+2. Create a new browser bookmark, paste the string into the bookmark URL.
+3. When on an exchange's betting slip, click the bookmark to auto-collect DOM data and open a new GitHub issue with the JSON and HTML prefilled.
+
+Note: If the collected JSON is too large, the issue page will open with empty fields and you'll be prompted to paste the JSON manually.
+
+### Manual Alternative
+
+If you prefer to do this manually, or the helper script doesn’t run, follow these steps:
+
+1. **Navigate to the betting slip** on the exchange you want to support.
+2. **Open DevTools** (F12 on most browsers).
+3. **Run the diagnostic snippet** in the Console tab to identify key elements:
 
 ```javascript
 // Find betting slip containers
 console.log('=== BETTING SLIP CONTAINERS ===');
-document.querySelectorAll('[class*="slip"], [class*="bet"], [class*="order"], [class*="panel"]').forEach(el => {
+document.querySelectorAll('[class*="slip"], [class*="bet"], [class*="order"], [class*="panel"], .betslip-container').forEach(el => {
   if (el.className && el.offsetHeight > 50) {
     console.log('Container:', el.className, el);
   }
 });
 
-// Find all number/text inputs
+// Find all stake inputs (numbers, text fields, or Betfair-style inputs)
 console.log('\n=== STAKE INPUT FIELDS ===');
-document.querySelectorAll('input[type="number"], input[type="text"]').forEach(el => {
+document.querySelectorAll('input[type="number"], input[type="text"], input.betslip-size-input, input[bf-number-restrict]').forEach(el => {
   if (el.offsetHeight > 0) {
     console.log('Input:', {
-      type: el.type,
-      className: el.className,
-      placeholder: el.placeholder,
-      name: el.name,
-      id: el.id,
-      value: el.value,
-      parent: el.parentElement?.className
+      type: el.type || '',
+      className: el.className || '',
+      placeholder: el.placeholder || '',
+      name: el.name || '',
+      id: el.id || '',
+      value: el.value || '',
+      parent: el.parentElement?.className || ''
     }, el);
   }
 });
 
-// Find data attributes
+// Data attributes useful for building selectors
 console.log('\n=== DATA ATTRIBUTES ===');
 document.querySelectorAll('[data-test], [data-testid], [data-test-id]').forEach(el => {
   if (el.offsetHeight > 0) {
@@ -295,34 +316,24 @@ document.querySelectorAll('[data-test], [data-testid], [data-test-id]').forEach(
 });
 ```
 
-4. **Right-click the stake input field** → Inspect Element, then copy the full HTML:
-   - Copy the input element and at least 3 parent levels up
-   - Include all class names and data attributes
+4. **Right-click the stake input field** → Inspect Element, then copy the HTML for that input element and at least 2–3 parent levels up. Include all class names and data attributes.
+5. **Create a new GitHub issue** using the Add Exchange Support template and include:
+   - Exchange name and domain
+   - Browser and OS used for testing
+   - Copied JSON from the helper script (preferred) or the console output
+   - Full HTML of the stake input and parent containers
+   - Screenshot showing the input in the betting slip (recommended)
 
-5. **Create a GitHub issue** or email with:
-   - Exchange name (e.g., "Betdaq")
-   - Console output from the script above
-   - Full HTML structure of the stake input
-   - Screenshot showing where the input appears on the page
-   - Browser/OS you tested on
+### Example Submission
 
-### Example Submission:
+When opening an issue, the template will prompt you for the required fields. Here's an example:
 
 ```markdown
 ## Add Support for Betdaq
 
-**Console Output:**
+**Console JSON:**
 ```
-=== BETTING SLIP CONTAINERS ===
-Container: betting-slip__container ...
-
-=== STAKE INPUT FIELDS ===
-Input: {
-  type: "text",
-  className: "input-field stake-input",
-  placeholder: "Enter stake",
-  ...
-}
+{ "url":"https://...", "timestamp":"...", "inputs":[{...}], "containers":[...], "dataAttributes":[...], "userAgent":"..." }
 ```
 
 **HTML Structure:**
@@ -334,33 +345,40 @@ Input: {
 </div>
 ```
 
-**Screenshot:** [attach image]
 **Browser:** Firefox 120 on Windows
+
+**Screenshot:** [attach screenshot]
 ```
 
-### What Happens Next:
+### What Happens Next
 
-1. Developer reviews your submission
-2. Selectors are added to `BETTING_SLIP_SELECTORS` in `contentScript.js`
-3. Auto-fill feature is tested with your selectors
-4. Exchange support is added to the next release
-5. You're credited in UPGRADE_NOTES.md
+1. A developer will review your issue.
+2. We’ll add or refine selectors in `BETTING_SLIP_SELECTORS` in `contentScript.js`.
+3. We’ll test and commit changes in an upcoming release.
+4. You're credited in `UPGRADE_NOTES.md` if you wish to be.
 
-### Current Selector Status:
+### Maintainer checklist (for devs)
 
-```javascript
-BETTING_SLIP_SELECTORS = {
-  betfair: { ... },        // ✅ Tested & working
-  smarkets: { ... },       // ✅ Tested & working (v1.0.29+)
-  matchbook: { ... },      // ✅ Tested & working
-  betdaq: { ... }          // ⚠️  Needs updating/testing
-}
-```
+- Add new selectors to `BETTING_SLIP_SELECTORS` in `contentScript.js` using the same pattern as other exchanges (specific selectors first, fallbacks last).
+- Verify the selector doesn't match elements inside `.sb-logger-stake-panel` and that `findElement()` will skip our UI components.
+- Use `tools/collect_betslip_info.js` to reproduce the issue and confirm the selector targets the correct input on desktop and mobile viewports.
+- Test auto-fill by enabling the Auto-Fill feature and reproducing the save → redirect flow from surebet.com to the exchange.
+- Commit and reference the issue in the PR description for traceability.
 
-### Why This Helps:
+### Developer tools
 
-- Auto-fill is more reliable with precise selectors
-- Exchange websites update their HTML regularly
-- Community contributions keep selectors current
-- New exchanges can be supported faster
-- Your betting experience improves!
+In `sb-logger-extension/tools` you'll find two helper utilities:
+- `collect_betslip_info.js` — paste into an exchange betting slip console to collect DOM data (JSON copied to clipboard)
+- `bookmarklet-demo.html` — a demo page that provides a bookmarklet string and instructions for creating a one-click issue bookmarklet
+
+We recommend using the bookmarklet for quick issue creation and the console helper when you need the full JSON payload for maintainers.
+
+### Why This Helps
+
+- Auto-fill is more reliable with precise selectors.
+- Sites change frequently; community contributions help keep support working.
+- You get faster support for sites you use often.
+
+---
+
+Thank you for helping us keep SB Logger working across exchanges!

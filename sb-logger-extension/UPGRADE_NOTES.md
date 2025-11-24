@@ -63,6 +63,18 @@
 
 ---
 
+## v1.0.38 - Contributor Experience Improvements 🛠️
+
+### What's New
+- **New helper tools for reporting DOM structures:** Added a diagnostic helper script and a bookmarklet that collects betting slip DOM information, copies it to the clipboard and pre-fills a GitHub issue with our new Add Exchange Support issue template.
+- **Standardized issue template:** `.github/ISSUE_TEMPLATE/add-exchange.md` included to make community submissions consistent and easy to triage.
+
+### How this helps
+- Faster triage and less back-and-forth for selector updates
+- Lower barrier for users to contribute DOM structures for new exchanges
+- More reliable auto-fill as selectors are updated more quickly by community contributions
+
+
 ## v1.0.29 - Smarkets Auto-Fill Fix 🔧
 
 ### What's Fixed

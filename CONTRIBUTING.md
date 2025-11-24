@@ -113,3 +113,9 @@ If you have questions about contributing, feel free to:
 ## License
 
 By contributing, you agree that your contributions will be licensed under the MIT License.
+
+## Contributing Exchange Selectors (DOM Structure)
+
+If you're helping to add support for a new betting exchange or fixing selectors, please follow the process in the README: use the `tools/collect_betslip_info.js` helper (copy it into the browser console) and create an issue using the "Add Exchange Support" issue template. This helps standardize submissions and provides the information maintainers need to add or fix selectors efficiently.
+
+Optional: You can also use `tools/bookmarklet-demo.html` to generate a one-click bookmarklet that opens a prefilled GitHub issue for the exchange you're testing.
