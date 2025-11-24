@@ -572,8 +572,6 @@ async function processImportedJSON(jsonText, filename) {
       message += `<br><strong>${skippedCount}</strong> duplicates skipped`;
     }
     
-    message += `<br><br><button onclick="window.close()">Close & Return to Extension</button>`;
-    
     showResults(
       'success',
       message
@@ -642,8 +640,7 @@ async function processImportedData(plData, source) {
     'success',
     `✅ Import Complete!<br><br>` +
     `<strong>${matchedCount}</strong> bet(s) matched and updated<br>` +
-    `${plData.length - matchedCount} entries had no matching bet<br><br>` +
-    `<button onclick="window.close()">Close & Return to Extension</button>`
+    `${plData.length - matchedCount} entries had no matching bet`
   );
 }
 
