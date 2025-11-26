@@ -35,14 +35,60 @@
     .note { color: #666; font-size: 11px; margin-top: 10px; }
     .adjust-btn { background: #007bff; color: #fff; border-color: #007bff; padding: 4px 8px; font-size: 10px; cursor: pointer; }
     .adjust-btn:hover { background: #0056b3; }
+    .low-significance { opacity: 0.5; font-style: italic; }
+    .low-significance::after { content: " (low sample)"; font-size: 10px; color: #f59e0b; }
+    .deviation-positive { color: #28a745; font-weight: 600; }
+    .deviation-negative { color: #dc3545; font-weight: 600; }
+    .section-title { font-size: 14px; font-weight: 600; margin: 20px 0 10px 0; color: #333; border-bottom: 2px solid #dee2e6; padding-bottom: 8px; }
   </style>
 </head>
 <body>
   <div class="container">
     <h1>📊 Analysis Dashboard</h1>
     
+    <!-- Summary Stats Section -->
+    <div id="summary-stats" class="stats-grid">
+      <div class="stat-box">
+        <div class="stat-label">Yield (ROI %)</div>
+        <div class="stat-value" id="yield-stat">0%</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Profit Factor</div>
+        <div class="stat-value" id="profit-factor-stat">0.00</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Total Turnover</div>
+        <div class="stat-value" id="turnover-stat">£0.00</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Net Profit</div>
+        <div class="stat-value" id="net-profit-stat">£0.00</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Avg Bet Size</div>
+        <div class="stat-value" id="avg-stake-stat">£0.00</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Max Drawdown</div>
+        <div class="stat-value negative" id="max-drawdown-stat">£0.00</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Current Drawdown</div>
+        <div class="stat-value negative" id="current-drawdown-stat">£0.00</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Longest Win Streak</div>
+        <div class="stat-value positive" id="win-streak-stat">0</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Longest Loss Streak</div>
+        <div class="stat-value negative" id="loss-streak-stat">0</div>
+      </div>
+    </div>
+    
     <div class="nav-bar">
       <button class="nav-btn active" data-view="chart">📈 Chart</button>
+      <button class="nav-btn" data-view="performance">📊 Performance</button>
       <button class="nav-btn" data-view="liquidity">💧 Liquidity Tiers</button>
       <button class="nav-btn" data-view="bookmakers">🏢 Bookmakers</button>
       <button class="nav-btn" data-view="temporal">⏰ Time Analysis</button>
@@ -55,6 +101,23 @@
       <h2>Betting Performance: P/L vs Expected Value</h2>
       <canvas id="plChart" width="1000" height="500"></canvas>
       <p class="note">Blue line: Cumulative Expected Value | Green/Red line: Actual P/L (cumulative over settled bets)</p>
+    </div>
+
+    <!-- Performance View -->
+    <div id="performance-view" class="view-container">
+      <h2>Performance Analysis by Category</h2>
+      
+      <div class="section-title">Odds Band Performance</div>
+      <canvas id="oddsBandChart" width="1000" height="300"></canvas>
+      <div id="oddsBand-content"></div>
+      
+      <div class="section-title">Overvalue Distribution</div>
+      <canvas id="overvalueChart" width="1000" height="300"></canvas>
+      <div id="overvalue-content"></div>
+      
+      <div class="section-title">Sport Breakdown</div>
+      <canvas id="sportChart" width="1000" height="300"></canvas>
+      <div id="sport-content"></div>
     </div>
 
     <!-- Liquidity Tiers View -->

@@ -46,6 +46,7 @@
       <button class="nav-btn active" data-section="commission">💰 Commission</button>
       <button class="nav-btn" data-section="rounding">📏 Rounding</button>
       <button class="nav-btn" data-section="autofill">⚡ Auto-Fill</button>
+      <button class="nav-btn" data-section="defaults">⚙️ Default Actions</button>
       <button class="nav-btn" data-section="kelly">🎲 Kelly Staking</button>
       <button class="nav-btn" data-section="api">🔑 API Setup</button>
       <button class="nav-btn" data-section="diagnostics">🔍 API Diagnostics</button>
@@ -157,6 +158,62 @@
       <div class="button-row">
         <button class="btn-cancel js-close-window" type="button">Cancel</button>
         <button class="btn-save" id="save-autofill-btn">Save Changes</button>
+      </div>
+    </div>
+
+    <!-- Default Actions Section -->
+    <div id="defaults-section" class="section-container">
+      <h2>⚙️ Default Actions</h2>
+      <div class="info-box">
+        <strong>ℹ️ Automate Repetitive Actions</strong><br>
+        Skip confirmation dialogs and use suggested values for common bet-saving actions.
+      </div>
+
+      <div class="form-group">
+        <label class="form-group-checkbox">
+          <input type="checkbox" id="default-actions-skip-stake" />
+          <span>Auto-save bets with Kelly stake (skip stake confirmation)</span>
+        </label>
+        <p class="note">⚠️ <strong>Requires Kelly Staking to be enabled.</strong> When checked, bets will be saved automatically using the calculated Kelly stake without showing a confirmation prompt.</p>
+      </div>
+
+      <div class="form-group">
+        <label class="form-group-checkbox">
+          <input type="checkbox" id="default-actions-skip-delete" />
+          <span>Delete bets without confirmation</span>
+        </label>
+        <p class="note">When enabled, individual bets will be deleted immediately without a confirmation dialog (does not affect "Delete All" button).</p>
+      </div>
+
+      <div class="form-group">
+        <label class="form-group-checkbox">
+          <input type="checkbox" id="default-actions-skip-odds" />
+          <span>Skip odds prompt if missing (cancel save)</span>
+        </label>
+        <p class="note">When enabled and odds cannot be automatically parsed, the bet save will be cancelled silently instead of prompting you to enter odds manually.</p>
+      </div>
+
+      <div class="form-group">
+        <label class="form-group-checkbox">
+          <input type="checkbox" id="default-actions-skip-market" />
+          <span>Auto-fill missing market as "Unknown"</span>
+        </label>
+        <p class="note">When enabled and market/selection cannot be parsed, "Unknown" will be used automatically instead of prompting you.</p>
+      </div>
+
+      <div class="form-group">
+        <label for="default-actions-dustbin">Auto-click dustbin after save:</label>
+        <select id="default-actions-dustbin">
+          <option value="none">Don't use (manual)</option>
+          <option value="hide-valuebet">Hide only this valuebet</option>
+          <option value="hide-event">Hide entire event</option>
+        </select>
+        <p class="note">After successfully saving a bet on surebet.com, automatically click the dustbin (trash) icon and select the specified action to remove it from view.</p>
+      </div>
+      
+      <div class="button-row">
+        <button class="btn-cancel js-close-window" type="button">Cancel</button>
+        <button class="btn-save" id="save-defaults-btn">Save Changes</button>
       </div>
     </div>
 

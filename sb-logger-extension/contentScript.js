@@ -52,6 +52,14 @@ function () {
     requireConfirmation: false
   };
 
+  const DEFAULT_ACTIONS_SETTINGS = {
+    skipStakePrompt: false,
+    skipDeleteConfirmation: false,
+    skipOddsPrompt: false,
+    skipMarketPrompt: false,
+    dustbinActionAfterSave: 'none' // 'none' | 'hide-valuebet' | 'hide-event'
+  };
+
   // Betting slip selectors for each exchange/betting site
   // 
   // HOW TO ADD A NEW BETTING SITE:
@@ -173,6 +181,7 @@ function () {
   let roundingSettings = { ...DEFAULT_ROUNDING_SETTINGS };
   let uiPreferences = { ...DEFAULT_UI_PREFERENCES };
   let autoFillSettings = { ...DEFAULT_AUTOFILL_SETTINGS };
+  let defaultActionsSettings = { ...DEFAULT_ACTIONS_SETTINGS };
   let stakePanel = null;
   let bettingSlipDetector = null;
   let bettingSlipDetectorPolling = null;
@@ -182,6 +191,60 @@ function () {
       return crypto.randomUUID();
     }
     return `surebet-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+
+  function showToast(message, duration = 3000) {
+    const toast = document.createElement('div');
+    toast.style.cssText = `
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: #28a745;
+      color: white;
+      padding: 12px 16px;
+      border-radius: 4px;
+      font-size: 13px;
+      font-family: Arial, sans-serif;
+      z-index: 999999;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      animation: slideIn 0.3s ease-out;
+    `;
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    
+    // Add animation keyframes if not already present
+    if (!document.getElementById('surebet-toast-styles')) {
+      const style = document.createElement('style');
+      style.id = 'surebet-toast-styles';
+      style.textContent = `
+        @keyframes slideIn {
+          from {
+            transform: translateX(400px);
+            opacity: 0;
+          }
+          to {
+            transform: translateX(0);
+            opacity: 1;
+          }
+        }
+        @keyframes slideOut {
+          from {
+            transform: translateX(0);
+            opacity: 1;
+          }
+          to {
+            transform: translateX(400px);
+            opacity: 0;
+          }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+    
+    setTimeout(() => {
+      toast.style.animation = 'slideOut 0.3s ease-out';
+      setTimeout(() => toast.remove(), 300);
+    }, duration);
   }
 
   // Run on surebet.com valuebets page OR any bookmaker site (not Surebet)
@@ -542,12 +605,14 @@ function () {
         stakingSettings: DEFAULT_STAKING_SETTINGS,
         commission: {},
         roundingSettings: DEFAULT_ROUNDING_SETTINGS,
-        autoFillSettings: DEFAULT_AUTOFILL_SETTINGS
+        autoFillSettings: DEFAULT_AUTOFILL_SETTINGS,
+        defaultActionsSettings: DEFAULT_ACTIONS_SETTINGS
       }, (res) => {
         const stored = res.stakingSettings || DEFAULT_STAKING_SETTINGS;
         const commissionData = res.commission || {};
         roundingSettings = res.roundingSettings || DEFAULT_ROUNDING_SETTINGS;
         autoFillSettings = res.autoFillSettings || DEFAULT_AUTOFILL_SETTINGS;
+        defaultActionsSettings = res.defaultActionsSettings || DEFAULT_ACTIONS_SETTINGS;
         const sanitizedBankroll = sanitizeBankroll(stored.bankroll ?? DEFAULT_STAKING_SETTINGS.bankroll, 0);
         const sanitizedBase = sanitizeBankroll(
           stored.baseBankroll ?? stored.bankroll ?? DEFAULT_STAKING_SETTINGS.baseBankroll,
@@ -1150,12 +1215,119 @@ function () {
     }
   }
 
+  // Trigger dustbin (trash icon) menu action after saving a bet
+  async function triggerDustbinAction(row, action) {
+    if (!row || action === 'none') {
+      return; // No action or not applicable
+    }
+
+    console.log('Surebet Helper: Attempting dustbin action:', action);
+
+    const dustbinBtn = row.querySelector('.btn-group.drop-trash > button');
+    if (!dustbinBtn) {
+      console.warn('Surebet Helper: Dustbin button not found in row');
+      showToast('⚠ Dustbin button not found', false, 3000);
+      return;
+    }
+
+    // Click the dustbin button to open the menu
+    dustbinBtn.click();
+    console.log('Surebet Helper: Clicked dustbin button');
+
+    // Wait for the menu to appear - try multiple strategies
+    let menuFound = false;
+    for (let attempt = 0; attempt < 8; attempt++) {
+      // Try multiple selectors for the dropdown menu
+      let menu = row.querySelector('.dropdown-menu');
+      if (!menu) {
+        menu = row.querySelector('.hidden-records-menu');
+      }
+      if (!menu) {
+        menu = row.querySelector('[class*="dropdown"]');
+      }
+      if (!menu) {
+        // Also check within the btn-group
+        const btnGroup = row.querySelector('.btn-group.drop-trash');
+        if (btnGroup) {
+          menu = btnGroup.querySelector('.dropdown-menu, ul, [role="menu"]');
+        }
+      }
+      
+      // Menu is visible if it exists and is displayed
+      const isVisible = menu && (
+        !menu.classList.contains('hidden') || 
+        menu.classList.contains('show') ||
+        window.getComputedStyle(menu).display !== 'none'
+      );
+      
+      if (isVisible) {
+        menuFound = true;
+        console.log('Surebet Helper: Menu found and visible, class:', menu.className);
+        
+        // Determine which keywords to look for based on action
+        let keywords = [];
+        if (action === 'hide-valuebet') {
+          // Match variations: "Hide this valuebet", "this valuebet", "Hide valuebet", etc.
+          keywords = ['this valuebet', 'hide valuebet', 'valuebet'];
+        } else if (action === 'hide-event') {
+          // Match variations: "Hide entire event", "entire event", "hide event", etc.
+          keywords = ['entire event', 'hide event', 'event'];
+        }
+
+        // Find the menu item - try multiple selector strategies
+        // Note: surebet.com uses <button class="dropdown-item"> elements
+        const menuItems = menu.querySelectorAll('button.dropdown-item, .dropdown-item, li a, a.dropdown-item, [role="menuitem"], button, a, li');
+        console.log('Surebet Helper: Found', menuItems.length, 'menu items. Looking for keywords:', keywords.join(', '));
+        
+        let clicked = false;
+        // Try each keyword in order (most specific first)
+        for (const keyword of keywords) {
+          if (clicked) break;
+          for (const item of menuItems) {
+            const itemText = item.textContent.trim().toLowerCase();
+            console.log('Surebet Helper: Checking menu item:', item.textContent.trim());
+            if (itemText.includes(keyword.toLowerCase())) {
+              item.click();
+              clicked = true;
+              console.log('Surebet Helper: ✓ Dustbin action triggered:', action, '- matched keyword:', keyword);
+              break;
+            }
+          }
+        }
+
+        if (!clicked) {
+          // Log all menu items for debugging
+          const allTexts = Array.from(menuItems).map(i => i.textContent.trim()).filter(t => t);
+          console.warn('Surebet Helper: Menu item not found. Available items:', allTexts.join(' | '));
+          showToast('⚠ Dustbin menu item not found', false, 3000);
+          // Close the menu by clicking elsewhere
+          dustbinBtn.click();
+        }
+        return;
+      }
+
+      // Wait before next attempt (increasing delay)
+      if (attempt < 7) {
+        await new Promise(resolve => setTimeout(resolve, 150 + (attempt * 50)));
+      }
+    }
+
+    if (!menuFound) {
+      console.warn('Surebet Helper: Dustbin menu did not appear after 8 attempts');
+      showToast('⚠ Dustbin menu did not open', false, 3000);
+    }
+  }
+
   async function saveBet(betData) {
     console.log('Surebet Helper: saveBet called with data:', betData);
     console.log('Surebet Helper: Odds check - value:', betData.odds, 'type:', typeof betData.odds, 'check result:', (!betData.odds || betData.odds === 0));
     
-    // If odds not found, prompt for it
+    // If odds not found, prompt for it (or skip if default action enabled)
     if (!betData.odds || betData.odds === 0) {
+      if (defaultActionsSettings.skipOddsPrompt) {
+        console.log('Surebet Helper: Odds missing and skipOddsPrompt enabled, cancelling save');
+        return false;
+      }
       console.log('Surebet Helper: Odds missing, prompting user');
       const oddsStr = prompt('Enter the odds (decimal format, e.g., 2.5):', '');
       if (oddsStr === null) return false; // User cancelled
@@ -1170,12 +1342,17 @@ function () {
       console.log('Surebet Helper: Odds already present:', betData.odds);
     }
 
-    // If market not found, prompt for it
+    // If market not found, prompt for it (or use default if enabled)
     if (!betData.market) {
-      const market = prompt('Enter the market/selection (e.g., "Player 1 to win", "Over 2.5 goals"):', '');
-      if (market === null) return false; // User cancelled
-      if (market.trim()) {
-        betData.market = market.trim();
+      if (defaultActionsSettings.skipMarketPrompt) {
+        betData.market = 'Unknown';
+        console.log('Surebet Helper: Market missing and skipMarketPrompt enabled, using "Unknown"');
+      } else {
+        const market = prompt('Enter the market/selection (e.g., "Player 1 to win", "Over 2.5 goals"):', '');
+        if (market === null) return false; // User cancelled
+        if (market.trim()) {
+          betData.market = market.trim();
+        }
       }
     }
 
@@ -1183,10 +1360,20 @@ function () {
     if (recommendedStake > 0) {
       betData.recommendedStake = recommendedStake;
     }
-    const stakeStr = prompt('Enter your stake amount:', recommendedStake > 0 ? recommendedStake.toFixed(2) : '');
-    if (stakeStr === null) return false; // User cancelled
 
-    const stake = parseFloat(stakeStr.replace(/[^\d.]/g, ''));
+    // Handle stake entry based on default actions settings
+    let stake;
+    if (defaultActionsSettings.skipStakePrompt && recommendedStake > 0) {
+      // Auto-save with recommended Kelly stake
+      stake = recommendedStake;
+      console.log('Surebet Helper: skipStakePrompt enabled, using Kelly stake:', stake);
+    } else {
+      // Prompt user for stake
+      const stakeStr = prompt('Enter your stake amount:', recommendedStake > 0 ? recommendedStake.toFixed(2) : '');
+      if (stakeStr === null) return false; // User cancelled
+      stake = parseFloat(stakeStr.replace(/[^\d.]/g, ''));
+    }
+
     if (isNaN(stake) || stake <= 0) {
       alert('Invalid stake amount');
       return false;
@@ -1230,6 +1417,10 @@ function () {
         const bets = res.bets || [];
         bets.push(betData);
         chrome.storage.local.set({ bets }, () => {
+          // Show toast notification if auto-saved with Kelly stake
+          if (defaultActionsSettings.skipStakePrompt && recommendedStake > 0) {
+            showToast(`✅ Bet saved with £${roundedStake.toFixed(2)} stake`);
+          }
           resolve(true);
         });
       });
@@ -1731,6 +1922,13 @@ function () {
         if (saved) {
           showToast('✓ Bet saved successfully!');
           saveBtn.textContent = '✓';
+          
+          // Trigger dustbin action if configured
+          console.log('Surebet Helper: Dustbin setting value:', defaultActionsSettings.dustbinActionAfterSave);
+          if (defaultActionsSettings.dustbinActionAfterSave && defaultActionsSettings.dustbinActionAfterSave !== 'none') {
+            await triggerDustbinAction(row, defaultActionsSettings.dustbinActionAfterSave);
+          }
+          
           setTimeout(() => {
             saveBtn.textContent = '💾 Save';
             saveBtn.disabled = false;

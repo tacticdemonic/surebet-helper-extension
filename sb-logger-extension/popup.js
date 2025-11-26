@@ -37,15 +37,31 @@ const DEFAULT_AUTOFILL_SETTINGS = {
   requireConfirmation: false
 };
 
+const DEFAULT_ACTIONS_SETTINGS = {
+  skipStakePrompt: false,
+  skipDeleteConfirmation: false,
+  skipOddsPrompt: false,
+  skipMarketPrompt: false
+};
+
 let commissionRates = { ...DEFAULT_COMMISSION_RATES };
 let roundingSettings = { ...DEFAULT_ROUNDING_SETTINGS };
 let uiPreferences = { ...DEFAULT_UI_PREFERENCES };
 let autoFillSettings = { ...DEFAULT_AUTOFILL_SETTINGS };
+let defaultActionsSettings = { ...DEFAULT_ACTIONS_SETTINGS };
 
 function loadCommissionRates(callback) {
   api.storage.local.get({ commission: DEFAULT_COMMISSION_RATES }, (res) => {
     commissionRates = { ...res.commission };
     console.log('💰 Commission rates loaded:', commissionRates);
+    if (callback) callback();
+  });
+}
+
+function loadDefaultActionsSettings(callback) {
+  api.storage.local.get({ defaultActionsSettings: DEFAULT_ACTIONS_SETTINGS }, (res) => {
+    defaultActionsSettings = { ...res.defaultActionsSettings };
+    console.log('⚙️ Default actions settings loaded:', defaultActionsSettings);
     if (callback) callback();
   });
 }
@@ -1186,9 +1202,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function deleteBet(betId) {
     console.log('deleteBet called with:', { betId });
-    if (!confirm('Are you sure you want to delete this bet? This cannot be undone.')) {
-      return;
+    
+    // Check if deletion should be skipped based on default actions settings
+    const shouldSkipConfirmation = defaultActionsSettings.skipDeleteConfirmation;
+    
+    if (!shouldSkipConfirmation) {
+      if (!confirm('Are you sure you want to delete this bet? This cannot be undone.')) {
+        return;
+      }
     }
+    
     api.storage.local.get({ bets: [] }, (res) => {
       const bets = res.bets || [];
       console.log('Total bets in storage before delete:', bets.length);
@@ -2574,7 +2597,9 @@ document.addEventListener('DOMContentLoaded', () => {
   loadCommissionRates(() => {
     loadRoundingSettings(() => {
       loadUIPreferences(() => {
-        loadAndRender();
+        loadDefaultActionsSettings(() => {
+          loadAndRender();
+        });
       });
     });
   });

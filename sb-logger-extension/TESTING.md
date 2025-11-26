@@ -108,6 +108,28 @@
 3. Confirm the action
 4. **Expected**: All bets are removed and popup shows "No bets saved yet"
 
+### 10. Test Analysis Dashboard
+1. In the popup, click the **"Analysis"** tab (chart icon)
+2. **Expected**: Dashboard view opens with "Summary Statistics" at the top
+3. **Verify Summary Stats**:
+   - 9 metric cards displayed (Yield, Profit Factor, Turnover, etc.)
+   - Values match your settled bets
+   - Color coding works (Green for positive, Red for negative)
+4. **Test Performance Tab**:
+   - Click **"Performance"** sub-tab
+   - **Expected**: Three analysis sections appear (Odds Bands, Overvalue, Sport)
+   - **Verify Charts**:
+     - Odds Band: Horizontal bars showing ROI%
+     - Overvalue: Vertical histogram showing distribution
+     - Sport: Horizontal bars ranked by profitability
+   - **Verify Tables**:
+     - Data matches charts
+     - "Significance" indicators (opacity) for rows with <20 bets
+     - Deviation column shows +/- % difference
+5. **Test Interactions**:
+   - Hover over chart bars to see tooltips (if implemented) or values
+   - Switch back to "Bets" tab and verify state is preserved
+
 ## What to Check
 
 ### contentScript.js
@@ -130,6 +152,14 @@
 - ✅ Hover highlights rows
 - ✅ Export buttons work (with status columns)
 - ✅ Clear All removes all bets
+
+### analysis.js & analysis.html
+- ✅ Summary stats calculate correctly
+- ✅ Performance charts render without errors
+- ✅ Canvas elements resize correctly
+- ✅ Significance indicators (opacity) work for small samples
+- ✅ Deviation calculations are correct
+- ✅ Tab switching works smoothly
 
 ### background.js
 - ✅ Export creates downloadable files

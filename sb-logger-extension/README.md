@@ -13,9 +13,11 @@
 - **Auto-check results**: Optionally configure free APIs to automatically check bet outcomes (see API Setup below)
 - **Smart retries**: Waits 30 min after event ends, retries up to 5 times with exponential backoff
 - **Running P/L**: Shows total profit/loss and ROI across all settled bets
+- **Advanced Analysis**: Comprehensive dashboard with odds band performance, overvalue distribution, and sport breakdown
 - **EV vs Actual**: Compare your actual results against expected value to track performance
 - **Visual charts**: Interactive graph showing your P/L and Expected EV trends over time
 - **Export & manage**: View all saved bets in popup, export to JSON/CSV, or clear all
+- **Auto-Hide Bets**: Automatically hides bets on surebet.com immediately after saving them (configurable in Settings).
 
 ## Installation
 

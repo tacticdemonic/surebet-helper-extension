@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.76] - 2025-11-26
+
+### ✨ New Features
+- **Advanced Analysis Dashboard**: Added comprehensive performance analysis tools to the Analysis tab.
+- **Summary Statistics**: Persistent top-bar showing 9 key metrics (Yield, Profit Factor, Drawdown, Streaks, etc.).
+- **Performance Tab**: New tab with three integrated analyses:
+  - **Odds Band Performance**: ROI% and deviation by odds range (1.00-1.50, 1.51-2.00, etc.).
+  - **Overvalue Distribution**: Calibration analysis of edge accuracy (0-1%, 1-2%, etc.).
+  - **Sport Breakdown**: Profitability ranking by sport category.
+- **Significance Indicators**: Visual de-emphasis (50% opacity) for metrics with low sample size (n<20).
+- **Deviation Analysis**: All tables now show actual vs expected win rate deviation (+/- %).
+- **Enhanced Export**: JSON exports now include all new performance metrics.
+
+---
+
+## [1.0.75] - 2025-11-26
+
+### ✨ New Features
+- **Auto-Hide Bets**: Automatically hides bets on surebet.com immediately after saving them.
+- **Dustbin Settings**: Configure the default hide action (Hide for 12h, 24h, or Permanently) in the extension settings.
+- **Smart Menu Handling**: Automatically detects and clicks the correct "dustbin" menu item based on your preference.
+
+### 🐛 Bug Fixes
+- Fixed menu item detection in `contentScript.js` to correctly identify `<button>` elements in the dropdown menu.
+
+---
+
 ## [1.0.57] - 2025-11-24
 
 ### 🎉 Major Refactor: UI Redesign & Settings Consolidation
@@ -237,5 +264,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Manual commission configuration
 - Basic auto-check result checking
 - Betfair P/L CSV import support
-
----

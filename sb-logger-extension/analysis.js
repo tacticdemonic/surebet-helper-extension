@@ -407,6 +407,663 @@ function calculateKellyFillRatios(bets, stakingSettings = DEFAULT_STAKING_SETTIN
   return summary;
 }
 
+function calculateSummaryStats(bets) {
+  console.log('📊 Calculating summary stats');
+  
+  const settledBets = bets.filter(b => b.status && b.status !== 'pending');
+  
+  // Build cumulative P/L array
+  const sortedBets = bets.slice().sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+  let cumulativePL = 0;
+  const cumulativePLArray = [];
+  let totalWins = 0;
+  let totalLosses = 0;
+  
+  sortedBets.forEach(b => {
+    if (b.status === 'won' && b.stake && b.odds) {
+      const commission = getCommission(b.bookmaker);
+      const grossProfit = (parseFloat(b.stake) * parseFloat(b.odds)) - parseFloat(b.stake);
+      const commissionAmount = commission > 0 ? (grossProfit * commission / 100) : 0;
+      const netProfit = grossProfit - commissionAmount;
+      cumulativePL += netProfit;
+      totalWins += 1;
+    } else if (b.status === 'lost' && b.stake) {
+      cumulativePL -= parseFloat(b.stake);
+      totalLosses += 1;
+    }
+    cumulativePLArray.push(cumulativePL);
+  });
+  
+  // Calculate yield/ROI
+  const totalTurnover = settledBets.reduce((sum, b) => sum + (parseFloat(b.stake) || 0), 0);
+  const yield_ = totalTurnover > 0 ? (cumulativePL / totalTurnover * 100) : 0;
+  
+  // Calculate profit factor
+  const profitFactor = totalLosses > 0 ? totalWins / totalLosses : (totalWins > 0 ? totalWins : 0);
+  
+  // Calculate average stake
+  const avgStake = settledBets.length > 0 ? totalTurnover / settledBets.length : 0;
+  
+  // Calculate drawdowns
+  let maxDrawdown = 0;
+  let currentDrawdown = 0;
+  let peak = 0;
+  
+  for (let i = 0; i < cumulativePLArray.length; i++) {
+    if (cumulativePLArray[i] > peak) {
+      peak = cumulativePLArray[i];
+    }
+    const dd = peak - cumulativePLArray[i];
+    if (dd > maxDrawdown) {
+      maxDrawdown = dd;
+    }
+  }
+  
+  if (cumulativePLArray.length > 0) {
+    currentDrawdown = peak - cumulativePLArray[cumulativePLArray.length - 1];
+  }
+  
+  // Calculate longest win/loss streaks
+  let longestWinStreak = 0;
+  let longestLossStreak = 0;
+  let currentWinStreak = 0;
+  let currentLossStreak = 0;
+  
+  sortedBets.forEach(b => {
+    if (b.status === 'won') {
+      currentWinStreak++;
+      if (currentWinStreak > longestWinStreak) {
+        longestWinStreak = currentWinStreak;
+      }
+      currentLossStreak = 0;
+    } else if (b.status === 'lost') {
+      currentLossStreak++;
+      if (currentLossStreak > longestLossStreak) {
+        longestLossStreak = currentLossStreak;
+      }
+      currentWinStreak = 0;
+    }
+  });
+  
+  const stats = {
+    yield: yield_.toFixed(2),
+    profitFactor: profitFactor.toFixed(2),
+    totalTurnover: totalTurnover.toFixed(2),
+    netProfit: cumulativePL.toFixed(2),
+    avgStake: avgStake.toFixed(2),
+    maxDrawdown: maxDrawdown.toFixed(2),
+    currentDrawdown: currentDrawdown.toFixed(2),
+    longestWinStreak,
+    longestLossStreak,
+    settledCount: settledBets.length,
+    winCount: totalWins,
+    lossCount: totalLosses
+  };
+  
+  console.log('  Summary stats:', stats);
+  return stats;
+}
+
+function calculateOddsBandStats(bets) {
+  console.log('📊 Calculating odds band stats');
+  
+  const settledBets = bets.filter(b => b.status && b.status !== 'pending');
+  
+  const bands = {
+    '1.00-1.50': { min: 1.00, max: 1.50, bets: [], winCount: 0, totalPL: 0, totalProbability: 0 },
+    '1.51-2.00': { min: 1.51, max: 2.00, bets: [], winCount: 0, totalPL: 0, totalProbability: 0 },
+    '2.01-3.00': { min: 2.01, max: 3.00, bets: [], winCount: 0, totalPL: 0, totalProbability: 0 },
+    '3.01-5.00': { min: 3.01, max: 5.00, bets: [], winCount: 0, totalPL: 0, totalProbability: 0 },
+    '5.01+': { min: 5.01, max: Infinity, bets: [], winCount: 0, totalPL: 0, totalProbability: 0 }
+  };
+  
+  settledBets.forEach(bet => {
+    const odds = parseFloat(bet.odds) || 0;
+    let bandKey = null;
+    
+    for (const [key, band] of Object.entries(bands)) {
+      if (odds >= band.min && odds <= band.max) {
+        bandKey = key;
+        break;
+      }
+    }
+    
+    if (bandKey && bands[bandKey]) {
+      bands[bandKey].bets.push(bet);
+      bands[bandKey].totalProbability += parseFloat(bet.probability) || 0;
+      
+      if (bet.status === 'won') {
+        bands[bandKey].winCount++;
+      }
+      
+      let actualPL = 0;
+      if (bet.status === 'won') {
+        const commission = getCommission(bet.bookmaker);
+        if (bet.isLay) {
+          const gross = parseFloat(bet.stake) || 0;
+          const commissionAmount = commission > 0 ? (gross * commission / 100) : 0;
+          actualPL = gross - commissionAmount;
+        } else {
+          const grossProfit = (parseFloat(bet.stake) * parseFloat(bet.odds)) - parseFloat(bet.stake);
+          const commissionAmount = commission > 0 ? (grossProfit * commission / 100) : 0;
+          actualPL = grossProfit - commissionAmount;
+        }
+      } else if (bet.status === 'lost') {
+        if (bet.isLay) {
+          actualPL = -(parseFloat(bet.stake) * (parseFloat(bet.odds) - 1));
+        } else {
+          actualPL = -parseFloat(bet.stake);
+        }
+      }
+      
+      bands[bandKey].totalPL += actualPL;
+    }
+  });
+  
+  const stats = {};
+  Object.entries(bands).forEach(([bandName, bandData]) => {
+    const count = bandData.bets.length;
+    const actualWinRate = count > 0 ? (bandData.winCount / count * 100) : 0;
+    const expectedWinRate = count > 0 ? (bandData.totalProbability / count) : 0;
+    const deviation = actualWinRate - expectedWinRate;
+    const totalStake = bandData.bets.reduce((sum, b) => sum + (parseFloat(b.stake) || 0), 0);
+    const roi = totalStake > 0 ? (bandData.totalPL / totalStake * 100) : 0;
+    const isSignificant = count >= 20;
+    
+    stats[bandName] = {
+      count,
+      winCount: bandData.winCount,
+      actualWinRate: actualWinRate.toFixed(2),
+      expectedWinRate: expectedWinRate.toFixed(2),
+      deviation: deviation.toFixed(2),
+      deviationDirection: deviation >= 0 ? 'positive' : 'negative',
+      roi: roi.toFixed(2),
+      totalPL: bandData.totalPL.toFixed(2),
+      isSignificant,
+      significance: isSignificant ? 'High' : count >= 10 ? 'Medium' : 'Low'
+    };
+  });
+  
+  console.log('  Odds band stats:', stats);
+  return stats;
+}
+
+function calculateOvervalueStats(bets) {
+  console.log('📊 Calculating overvalue stats');
+  
+  const settledBets = bets.filter(b => b.status && b.status !== 'pending');
+  
+  const ranges = {
+    '0-1%': { min: 0, max: 1, bets: [], winCount: 0, totalPL: 0, totalProbability: 0 },
+    '1-2%': { min: 1, max: 2, bets: [], winCount: 0, totalPL: 0, totalProbability: 0 },
+    '2-3%': { min: 2, max: 3, bets: [], winCount: 0, totalPL: 0, totalProbability: 0 },
+    '3-5%': { min: 3, max: 5, bets: [], winCount: 0, totalPL: 0, totalProbability: 0 },
+    '5%+': { min: 5, max: Infinity, bets: [], winCount: 0, totalPL: 0, totalProbability: 0 }
+  };
+  
+  settledBets.forEach(bet => {
+    const overvalue = parseFloat(bet.overvalue) || 0;
+    let rangeKey = null;
+    
+    for (const [key, range] of Object.entries(ranges)) {
+      if (overvalue >= range.min && overvalue < range.max) {
+        rangeKey = key;
+        break;
+      }
+      if (key === '5%+' && overvalue >= range.min) {
+        rangeKey = key;
+        break;
+      }
+    }
+    
+    if (rangeKey && ranges[rangeKey]) {
+      ranges[rangeKey].bets.push(bet);
+      ranges[rangeKey].totalProbability += parseFloat(bet.probability) || 0;
+      
+      if (bet.status === 'won') {
+        ranges[rangeKey].winCount++;
+      }
+      
+      let actualPL = 0;
+      if (bet.status === 'won') {
+        const commission = getCommission(bet.bookmaker);
+        if (bet.isLay) {
+          const gross = parseFloat(bet.stake) || 0;
+          const commissionAmount = commission > 0 ? (gross * commission / 100) : 0;
+          actualPL = gross - commissionAmount;
+        } else {
+          const grossProfit = (parseFloat(bet.stake) * parseFloat(bet.odds)) - parseFloat(bet.stake);
+          const commissionAmount = commission > 0 ? (grossProfit * commission / 100) : 0;
+          actualPL = grossProfit - commissionAmount;
+        }
+      } else if (bet.status === 'lost') {
+        if (bet.isLay) {
+          actualPL = -(parseFloat(bet.stake) * (parseFloat(bet.odds) - 1));
+        } else {
+          actualPL = -parseFloat(bet.stake);
+        }
+      }
+      
+      ranges[rangeKey].totalPL += actualPL;
+    }
+  });
+  
+  const stats = {};
+  Object.entries(ranges).forEach(([rangeName, rangeData]) => {
+    const count = rangeData.bets.length;
+    const actualWinRate = count > 0 ? (rangeData.winCount / count * 100) : 0;
+    const expectedWinRate = count > 0 ? (rangeData.totalProbability / count) : 0;
+    const deviation = actualWinRate - expectedWinRate;
+    const totalStake = rangeData.bets.reduce((sum, b) => sum + (parseFloat(b.stake) || 0), 0);
+    const roi = totalStake > 0 ? (rangeData.totalPL / totalStake * 100) : 0;
+    const isSignificant = count >= 20;
+    
+    stats[rangeName] = {
+      count,
+      winCount: rangeData.winCount,
+      actualWinRate: actualWinRate.toFixed(2),
+      expectedWinRate: expectedWinRate.toFixed(2),
+      deviation: deviation.toFixed(2),
+      deviationDirection: deviation >= 0 ? 'positive' : 'negative',
+      roi: roi.toFixed(2),
+      totalPL: rangeData.totalPL.toFixed(2),
+      isSignificant,
+      significance: isSignificant ? 'High' : count >= 10 ? 'Medium' : 'Low'
+    };
+  });
+  
+  console.log('  Overvalue stats:', stats);
+  return stats;
+}
+
+function calculateSportStats(bets) {
+  console.log('📊 Calculating sport stats');
+  
+  const settledBets = bets.filter(b => b.status && b.status !== 'pending');
+  
+  const sportsMap = {};
+  
+  settledBets.forEach(bet => {
+    const sport = bet.sport || 'Other';
+    if (!sportsMap[sport]) {
+      sportsMap[sport] = {
+        bets: [],
+        winCount: 0,
+        totalPL: 0,
+        totalProbability: 0,
+        totalOdds: 0,
+        totalOvervalue: 0
+      };
+    }
+    
+    sportsMap[sport].bets.push(bet);
+    sportsMap[sport].totalProbability += parseFloat(bet.probability) || 0;
+    sportsMap[sport].totalOdds += parseFloat(bet.odds) || 0;
+    sportsMap[sport].totalOvervalue += parseFloat(bet.overvalue) || 0;
+    
+    if (bet.status === 'won') {
+      sportsMap[sport].winCount++;
+    }
+    
+    let actualPL = 0;
+    if (bet.status === 'won') {
+      const commission = getCommission(bet.bookmaker);
+      if (bet.isLay) {
+        const gross = parseFloat(bet.stake) || 0;
+        const commissionAmount = commission > 0 ? (gross * commission / 100) : 0;
+        actualPL = gross - commissionAmount;
+      } else {
+        const grossProfit = (parseFloat(bet.stake) * parseFloat(bet.odds)) - parseFloat(bet.stake);
+        const commissionAmount = commission > 0 ? (grossProfit * commission / 100) : 0;
+        actualPL = grossProfit - commissionAmount;
+      }
+    } else if (bet.status === 'lost') {
+      if (bet.isLay) {
+        actualPL = -(parseFloat(bet.stake) * (parseFloat(bet.odds) - 1));
+      } else {
+        actualPL = -parseFloat(bet.stake);
+      }
+    }
+    
+    sportsMap[sport].totalPL += actualPL;
+  });
+  
+  const sportStats = Object.entries(sportsMap).map(([name, data]) => {
+    const count = data.bets.length;
+    const actualWinRate = count > 0 ? (data.winCount / count * 100) : 0;
+    const expectedWinRate = count > 0 ? (data.totalProbability / count) : 0;
+    const deviation = actualWinRate - expectedWinRate;
+    const totalStake = data.bets.reduce((sum, b) => sum + (parseFloat(b.stake) || 0), 0);
+    const roi = totalStake > 0 ? (data.totalPL / totalStake * 100) : 0;
+    const avgOdds = count > 0 ? (data.totalOdds / count).toFixed(2) : '0.00';
+    const avgOvervalue = count > 0 ? (data.totalOvervalue / count).toFixed(2) : '0.00';
+    const isSignificant = count >= 20;
+    
+    return {
+      name,
+      count,
+      winCount: data.winCount,
+      actualWinRate: actualWinRate.toFixed(2),
+      expectedWinRate: expectedWinRate.toFixed(2),
+      deviation: deviation.toFixed(2),
+      deviationDirection: deviation >= 0 ? 'positive' : 'negative',
+      roi: roi.toFixed(2),
+      totalPL: data.totalPL.toFixed(2),
+      avgOdds: parseFloat(avgOdds),
+      avgOvervalue: parseFloat(avgOvervalue),
+      isSignificant,
+      significance: isSignificant ? 'High' : count >= 10 ? 'Medium' : 'Low'
+    };
+  }).sort((a, b) => parseFloat(b.roi) - parseFloat(a.roi));
+  
+  console.log('  Sport stats:', sportStats);
+  return sportStats;
+}
+
+// Bar chart rendering function
+function renderBarChart(canvasId, labels, values, colors, showLowSignificance = null) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  
+  const ctx = canvas.getContext('2d');
+  const barHeight = 30;
+  const topPadding = 30;
+  const bottomPadding = 40;
+  const leftPadding = 150;
+  const rightPadding = 20;
+  
+  const chartHeight = Math.max(labels.length * barHeight + topPadding + bottomPadding, canvas.height);
+  canvas.height = chartHeight;
+  
+  const chartWidth = canvas.width - leftPadding - rightPadding;
+  
+  const maxValue = Math.max(...values, 0);
+  const minValue = Math.min(...values, -100);
+  const range = Math.max(maxValue - minValue, 1);
+  
+  // Draw background
+  ctx.fillStyle = '#f8f9fa';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  
+  // Draw labels
+  ctx.fillStyle = '#333';
+  ctx.font = '12px Arial';
+  ctx.textAlign = 'right';
+  labels.forEach((label, idx) => {
+    const y = topPadding + (idx + 0.5) * barHeight;
+    const opacity = showLowSignificance && !showLowSignificance[idx] ? 0.5 : 1.0;
+    ctx.globalAlpha = opacity;
+    ctx.fillText(label, leftPadding - 10, y + 4);
+    ctx.globalAlpha = 1.0;
+  });
+  
+  // Draw bars
+  values.forEach((value, idx) => {
+    const y = topPadding + idx * barHeight;
+    const normalizedValue = (value - minValue) / range;
+    const barWidth = normalizedValue * chartWidth;
+    const barY = y + 5;
+    const opacity = showLowSignificance && !showLowSignificance[idx] ? 0.5 : 1.0;
+    
+    ctx.globalAlpha = opacity;
+    ctx.fillStyle = colors[idx] || '#007bff';
+    ctx.fillRect(leftPadding, barY, barWidth, barHeight - 10);
+    
+    // Draw value text
+    ctx.fillStyle = '#333';
+    ctx.font = 'bold 11px Arial';
+    ctx.textAlign = 'left';
+    ctx.fillText(value.toFixed(2) + '%', leftPadding + barWidth + 5, barY + 18);
+    ctx.globalAlpha = 1.0;
+  });
+  
+  // Draw axes
+  ctx.globalAlpha = 1.0;
+  ctx.strokeStyle = '#333';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(leftPadding, topPadding);
+  ctx.lineTo(leftPadding, topPadding + labels.length * barHeight);
+  ctx.lineTo(canvas.width - rightPadding, topPadding + labels.length * barHeight);
+  ctx.stroke();
+}
+
+// Histogram rendering function
+function renderHistogram(canvasId, labels, counts, significance) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  
+  const ctx = canvas.getContext('2d');
+  const barWidth = 80;
+  const topPadding = 40;
+  const bottomPadding = 60;
+  const leftPadding = 60;
+  const rightPadding = 20;
+  
+  const chartHeight = canvas.height;
+  const chartWidth = canvas.width - leftPadding - rightPadding;
+  
+  const maxCount = Math.max(...counts, 1);
+  
+  // Draw background
+  ctx.fillStyle = '#f8f9fa';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  
+  // Draw grid lines
+  ctx.strokeStyle = '#e0e0e0';
+  ctx.lineWidth = 1;
+  for (let i = 1; i <= 4; i++) {
+    const y = topPadding + (chartHeight - topPadding - bottomPadding) / 5 * i;
+    ctx.beginPath();
+    ctx.moveTo(leftPadding, y);
+    ctx.lineTo(canvas.width - rightPadding, y);
+    ctx.stroke();
+  }
+  
+  // Draw bars
+  labels.forEach((label, idx) => {
+    const normalizedCount = (counts[idx] / maxCount) * (chartHeight - topPadding - bottomPadding);
+    const x = leftPadding + idx * (barWidth + 15);
+    const y = chartHeight - bottomPadding - normalizedCount;
+    const opacity = !significance[idx] ? 0.5 : 1.0;
+    
+    ctx.globalAlpha = opacity;
+    ctx.fillStyle = significance[idx] ? '#007bff' : '#b3d9ff';
+    ctx.fillRect(x, y, barWidth, normalizedCount);
+    ctx.globalAlpha = 1.0;
+    
+    // Draw count text on bar
+    ctx.fillStyle = '#333';
+    ctx.font = 'bold 11px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(counts[idx], x + barWidth / 2, y + normalizedCount - 10);
+    
+    // Draw label
+    ctx.fillStyle = '#555';
+    ctx.font = '11px Arial';
+    ctx.textAlign = 'center';
+    ctx.save();
+    ctx.translate(x + barWidth / 2, chartHeight - bottomPadding + 15);
+    ctx.rotate(-Math.PI / 6);
+    ctx.fillText(label, 0, 0);
+    ctx.restore();
+  });
+  
+  // Draw axes
+  ctx.globalAlpha = 1.0;
+  ctx.strokeStyle = '#333';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(leftPadding, topPadding);
+  ctx.lineTo(leftPadding, chartHeight - bottomPadding);
+  ctx.lineTo(canvas.width - rightPadding, chartHeight - bottomPadding);
+  ctx.stroke();
+  
+  // Draw axis labels
+  ctx.fillStyle = '#333';
+  ctx.font = '12px Arial';
+  ctx.textAlign = 'center';
+  ctx.fillText('Overvalue Range', canvas.width / 2, canvas.height - 10);
+  
+  ctx.save();
+  ctx.translate(15, canvas.height / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.textAlign = 'center';
+  ctx.fillText('Number of Bets', 0, 0);
+  ctx.restore();
+}
+
+// Performance analysis rendering function
+function renderPerformanceAnalysis(oddsBandStats, overvalueStats, sportStats) {
+  console.log('📊 Rendering performance analysis');
+  
+  // Render odds band chart
+  const oddsBandLabels = Object.keys(oddsBandStats);
+  const oddsBandROI = Object.values(oddsBandStats).map(s => parseFloat(s.roi));
+  const oddsBandColors = oddsBandROI.map(roi => roi >= 0 ? '#28a745' : '#dc3545');
+  const oddsBandSignificance = Object.values(oddsBandStats).map(s => s.isSignificant);
+  
+  renderBarChart('oddsBandChart', oddsBandLabels, oddsBandROI, oddsBandColors, oddsBandSignificance);
+  
+  // Render odds band table
+  const oddsBandHtml = `
+    <table>
+      <thead>
+        <tr>
+          <th>Odds Band</th>
+          <th style="text-align:center">Bets (n)</th>
+          <th style="text-align:center">Actual Win %</th>
+          <th style="text-align:center">Expected Win %</th>
+          <th style="text-align:center">Deviation</th>
+          <th style="text-align:center">ROI %</th>
+          <th style="text-align:center">Total P/L</th>
+          <th style="text-align:center">Significance</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${oddsBandLabels.map(band => {
+          const stats = oddsBandStats[band];
+          const className = !stats.isSignificant ? 'low-significance' : '';
+          const roiColor = parseFloat(stats.roi) >= 0 ? '#28a745' : '#dc3545';
+          const plColor = parseFloat(stats.totalPL) >= 0 ? '#28a745' : '#dc3545';
+          const devColor = stats.deviationDirection === 'positive' ? '#28a745' : '#dc3545';
+          return `
+            <tr class="${className}">
+              <td style="font-weight:600">${band}</td>
+              <td style="text-align:center">${stats.count}</td>
+              <td style="text-align:center">${stats.actualWinRate}%</td>
+              <td style="text-align:center">${stats.expectedWinRate}%</td>
+              <td style="text-align:center;color:${devColor};font-weight:600">${stats.deviation > 0 ? '+' : ''}${stats.deviation}%</td>
+              <td style="text-align:center;color:${roiColor};font-weight:600">${stats.roi}%</td>
+              <td style="text-align:center;color:${plColor};font-weight:600">£${stats.totalPL}</td>
+              <td style="text-align:center">${stats.significance}</td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
+  document.getElementById('oddsBand-content').innerHTML = oddsBandHtml;
+  
+  // Render overvalue histogram
+  const overvalueLabels = Object.keys(overvalueStats);
+  const overvalueCounts = Object.values(overvalueStats).map(s => s.count);
+  const overvalueSignificance = Object.values(overvalueStats).map(s => s.isSignificant);
+  
+  renderHistogram('overvalueChart', overvalueLabels, overvalueCounts, overvalueSignificance);
+  
+  // Render overvalue table
+  const overvalueHtml = `
+    <table>
+      <thead>
+        <tr>
+          <th>Overvalue Range</th>
+          <th style="text-align:center">Bets (n)</th>
+          <th style="text-align:center">Actual Win %</th>
+          <th style="text-align:center">Expected Win %</th>
+          <th style="text-align:center">Deviation</th>
+          <th style="text-align:center">ROI %</th>
+          <th style="text-align:center">Total P/L</th>
+          <th style="text-align:center">Significance</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${overvalueLabels.map(range => {
+          const stats = overvalueStats[range];
+          const className = !stats.isSignificant ? 'low-significance' : '';
+          const roiColor = parseFloat(stats.roi) >= 0 ? '#28a745' : '#dc3545';
+          const plColor = parseFloat(stats.totalPL) >= 0 ? '#28a745' : '#dc3545';
+          const devColor = stats.deviationDirection === 'positive' ? '#28a745' : '#dc3545';
+          return `
+            <tr class="${className}">
+              <td style="font-weight:600">${range}</td>
+              <td style="text-align:center">${stats.count}</td>
+              <td style="text-align:center">${stats.actualWinRate}%</td>
+              <td style="text-align:center">${stats.expectedWinRate}%</td>
+              <td style="text-align:center;color:${devColor};font-weight:600">${stats.deviation > 0 ? '+' : ''}${stats.deviation}%</td>
+              <td style="text-align:center;color:${roiColor};font-weight:600">${stats.roi}%</td>
+              <td style="text-align:center;color:${plColor};font-weight:600">£${stats.totalPL}</td>
+              <td style="text-align:center">${stats.significance}</td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
+  document.getElementById('overvalue-content').innerHTML = overvalueHtml;
+  
+  // Render sport chart
+  const sportLabels = sportStats.map(s => s.name);
+  const sportROI = sportStats.map(s => parseFloat(s.roi));
+  const sportColors = sportROI.map(roi => roi >= 0 ? '#28a745' : '#dc3545');
+  const sportSignificance = sportStats.map(s => s.isSignificant);
+  
+  renderBarChart('sportChart', sportLabels, sportROI, sportColors, sportSignificance);
+  
+  // Render sport table
+  const sportHtml = `
+    <table>
+      <thead>
+        <tr>
+          <th>Sport</th>
+          <th style="text-align:center">Bets (n)</th>
+          <th style="text-align:center">Win Rate %</th>
+          <th style="text-align:center">Expected %</th>
+          <th style="text-align:center">Deviation</th>
+          <th style="text-align:center">ROI %</th>
+          <th style="text-align:center">Avg Odds</th>
+          <th style="text-align:center">Avg Overvalue %</th>
+          <th style="text-align:center">Total P/L</th>
+          <th style="text-align:center">Significance</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${sportStats.map(sport => {
+          const className = !sport.isSignificant ? 'low-significance' : '';
+          const roiColor = parseFloat(sport.roi) >= 0 ? '#28a745' : '#dc3545';
+          const plColor = parseFloat(sport.totalPL) >= 0 ? '#28a745' : '#dc3545';
+          const devColor = sport.deviationDirection === 'positive' ? '#28a745' : '#dc3545';
+          return `
+            <tr class="${className}">
+              <td style="font-weight:600">${sport.name}</td>
+              <td style="text-align:center">${sport.count}</td>
+              <td style="text-align:center">${sport.actualWinRate}%</td>
+              <td style="text-align:center">${sport.expectedWinRate}%</td>
+              <td style="text-align:center;color:${devColor};font-weight:600">${sport.deviation > 0 ? '+' : ''}${sport.deviation}%</td>
+              <td style="text-align:center;color:${roiColor};font-weight:600">${sport.roi}%</td>
+              <td style="text-align:center">${sport.avgOdds.toFixed(2)}</td>
+              <td style="text-align:center">${sport.avgOvervalue.toFixed(2)}%</td>
+              <td style="text-align:center;color:${plColor};font-weight:600">£${sport.totalPL}</td>
+              <td style="text-align:center">${sport.significance}</td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
+  document.getElementById('sport-content').innerHTML = sportHtml;
+}
+
 // Chart rendering function
 function showChart(bets) {
   const canvas = document.getElementById('plChart');
@@ -648,8 +1305,43 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   function renderAllAnalysis(bets, stakingSettings) {
+    // Calculate all stats first
+    const summaryStats = calculateSummaryStats(bets);
+    const oddsBandStats = calculateOddsBandStats(bets);
+    const overvalueStats = calculateOvervalueStats(bets);
+    const sportStats = calculateSportStats(bets);
+    
+    // Render summary stats section
+    document.getElementById('yield-stat').textContent = summaryStats.yield + '%';
+    const yieldValue = parseFloat(summaryStats.yield);
+    if (document.getElementById('yield-stat').parentElement) {
+      document.getElementById('yield-stat').parentElement.style.color = yieldValue >= 0 ? '#28a745' : '#dc3545';
+    }
+    
+    document.getElementById('profit-factor-stat').textContent = summaryStats.profitFactor;
+    const pfValue = parseFloat(summaryStats.profitFactor);
+    if (document.getElementById('profit-factor-stat').parentElement) {
+      document.getElementById('profit-factor-stat').parentElement.style.color = pfValue > 1 ? '#28a745' : '#dc3545';
+    }
+    
+    document.getElementById('turnover-stat').textContent = '£' + summaryStats.totalTurnover;
+    document.getElementById('net-profit-stat').textContent = '£' + summaryStats.netProfit;
+    const npValue = parseFloat(summaryStats.netProfit);
+    if (document.getElementById('net-profit-stat').parentElement) {
+      document.getElementById('net-profit-stat').parentElement.style.color = npValue >= 0 ? '#28a745' : '#dc3545';
+    }
+    
+    document.getElementById('avg-stake-stat').textContent = '£' + summaryStats.avgStake;
+    document.getElementById('max-drawdown-stat').textContent = '£' + summaryStats.maxDrawdown;
+    document.getElementById('current-drawdown-stat').textContent = '£' + summaryStats.currentDrawdown;
+    document.getElementById('win-streak-stat').textContent = summaryStats.longestWinStreak;
+    document.getElementById('loss-streak-stat').textContent = summaryStats.longestLossStreak;
+    
     // Render chart
     showChart(bets);
+    
+    // Render performance analysis
+    renderPerformanceAnalysis(oddsBandStats, overvalueStats, sportStats);
 
     // Render liquidity tiers
     const tierStats = calculateLiquidityStats(bets);
@@ -814,15 +1506,25 @@ document.addEventListener('DOMContentLoaded', () => {
       
       updateCache(bets, stakingSettings);
       
+      const summaryStats = calculateSummaryStats(bets);
       const tierStats = calculateLiquidityStats(bets);
       const bookmakerStats = calculateBookmakerStats(bets);
       const temporalStats = calculateTemporalStats(bets);
       const kellyStats = calculateKellyFillRatios(bets, stakingSettings);
+      const oddsBandStats = calculateOddsBandStats(bets);
+      const overvalueStats = calculateOvervalueStats(bets);
+      const sportStats = calculateSportStats(bets);
       
       const exportData = {
         exportDate: new Date().toISOString(),
         bets: bets,
         analysis: {
+          summaryStats: summaryStats,
+          performanceAnalysis: {
+            oddsBands: oddsBandStats,
+            overvalueDistribution: overvalueStats,
+            sportBreakdown: sportStats
+          },
           liquidityTiers: tierStats,
           bookmakerProfiling: bookmakerStats,
           temporalAnalysis: temporalStats,

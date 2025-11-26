@@ -27,6 +27,14 @@ const DEFAULT_AUTOFILL_SETTINGS = {
   requireConfirmation: false
 };
 
+const DEFAULT_ACTIONS_SETTINGS = {
+  skipStakePrompt: false,
+  skipDeleteConfirmation: false,
+  skipOddsPrompt: false,
+  skipMarketPrompt: false,
+  dustbinActionAfterSave: 'none' // 'none' | 'hide-valuebet' | 'hide-event'
+};
+
 // Initialize page
 document.addEventListener('DOMContentLoaded', () => {
   console.log('⚙️ Settings page loaded');
@@ -85,6 +93,7 @@ document.addEventListener('DOMContentLoaded', () => {
       commission: DEFAULT_COMMISSION_RATES,
       roundingSettings: DEFAULT_ROUNDING_SETTINGS,
       autoFillSettings: DEFAULT_AUTOFILL_SETTINGS,
+      defaultActionsSettings: DEFAULT_ACTIONS_SETTINGS,
       apiKeys: {}
     }, (res) => {
       console.log('⚙️ Loaded settings from storage:', res);
@@ -107,6 +116,16 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('autofill-betdaq').checked = autoFillSettings.bookmakers?.betdaq !== false;
       document.getElementById('autofill-smarkets').checked = autoFillSettings.bookmakers?.smarkets !== false;
       document.getElementById('autofill-matchbook').checked = autoFillSettings.bookmakers?.matchbook !== false;
+
+      // Load default actions settings
+      const defaultActionsSettings = res.defaultActionsSettings || DEFAULT_ACTIONS_SETTINGS;
+      document.getElementById('default-actions-skip-stake').checked = defaultActionsSettings.skipStakePrompt || false;
+      document.getElementById('default-actions-skip-delete').checked = defaultActionsSettings.skipDeleteConfirmation || false;
+      document.getElementById('default-actions-skip-odds').checked = defaultActionsSettings.skipOddsPrompt || false;
+      document.getElementById('default-actions-skip-market').checked = defaultActionsSettings.skipMarketPrompt || false;
+      if (document.getElementById('default-actions-dustbin')) {
+        document.getElementById('default-actions-dustbin').value = defaultActionsSettings.dustbinActionAfterSave || 'none';
+      }
 
       // Load API keys (note: don't load the actual keys for security, just indicate if they exist)
       const apiKeys = res.apiKeys || {};
@@ -199,6 +218,42 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('✅ Auto-fill settings saved');
         alert('✅ Auto-fill settings saved successfully!');
       });
+    });
+
+    // Default Actions save
+    document.getElementById('save-defaults-btn').addEventListener('click', () => {
+      const skipStakePrompt = document.getElementById('default-actions-skip-stake').checked;
+      
+      // Validate: if skipStakePrompt is enabled, Kelly staking must be enabled
+      if (skipStakePrompt) {
+        api.storage.local.get({ stakingSettings: {} }, (res) => {
+          const stakingSettings = res.stakingSettings || {};
+          if (!stakingSettings.bankroll || stakingSettings.bankroll <= 0) {
+            alert('❌ Kelly Staking must be configured before enabling auto-save. Please set up Kelly Staking first.');
+            document.getElementById('default-actions-skip-stake').checked = false;
+            return;
+          }
+          
+          saveDefaultActionsSettings();
+        });
+      } else {
+        saveDefaultActionsSettings();
+      }
+      
+      function saveDefaultActionsSettings() {
+        const newSettings = {
+          skipStakePrompt: document.getElementById('default-actions-skip-stake').checked,
+          skipDeleteConfirmation: document.getElementById('default-actions-skip-delete').checked,
+          skipOddsPrompt: document.getElementById('default-actions-skip-odds').checked,
+          skipMarketPrompt: document.getElementById('default-actions-skip-market').checked,
+          dustbinActionAfterSave: document.getElementById('default-actions-dustbin').value || 'none'
+        };
+        console.log('💾 Saving default actions settings:', newSettings);
+        api.storage.local.set({ defaultActionsSettings: newSettings }, () => {
+          console.log('✅ Default actions settings saved');
+          alert('✅ Default actions settings saved successfully!');
+        });
+      }
     });
 
     // API test connection
