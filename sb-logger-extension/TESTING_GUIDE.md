@@ -60,6 +60,12 @@ After loading, check these indicators:
    - Click "Export JSON" or "Export CSV" in popup
    - File should download automatically
 
+4. **Export Pending Bets (Debug)**
+   - Open the extension Settings (⚙️ Settings)
+   - Go to the **Data** tab
+   - Click **🐛 Debug Export → Export Pending Bets (JSON)**
+   - The file will download with only bets that are currently pending/unsettled — use this for debugging CSV import parser issues or verifying pending bet structure
+
 ---
 
 ### Troubleshooting

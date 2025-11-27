@@ -23,7 +23,8 @@ const DEFAULT_ROUNDING_SETTINGS = {
 };
 
 const DEFAULT_UI_PREFERENCES = {
-  hideLayBets: false
+  hideLayBets: false,
+  showPendingOnly: false
 };
 
 const DEFAULT_AUTOFILL_SETTINGS = {
@@ -92,6 +93,10 @@ function loadUIPreferences(callback) {
     // Apply UI preferences to DOM elements
     if (document.getElementById('hide-lay-bets')) {
       document.getElementById('hide-lay-bets').checked = uiPreferences.hideLayBets || false;
+    }
+    
+    if (document.getElementById('show-pending-only')) {
+      document.getElementById('show-pending-only').checked = uiPreferences.showPendingOnly || false;
     }
     
     if (callback) callback();
@@ -845,8 +850,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ===== END LIQUIDITY ANALYSIS FUNCTIONS =====
 
-  function render(bets, sortBy = 'saved-desc', hideLayBets = false) {
-    console.log('🎨 Rendering', bets.length, 'bets, sortBy:', sortBy, 'hideLayBets:', hideLayBets);
+  function render(bets, sortBy = 'saved-desc', hideLayBets = false, showPendingOnly = false) {
+    console.log('🎨 Rendering', bets.length, 'bets, sortBy:', sortBy, 'hideLayBets:', hideLayBets, 'showPendingOnly:', showPendingOnly);
 
     if (!bets || bets.length === 0) {
       container.innerHTML = '<div class="small">No bets saved yet. Visit surebet.com/valuebets and click "💾 Save" on any bet row.</div>';
@@ -867,6 +872,15 @@ document.addEventListener('DOMContentLoaded', () => {
       filteredBets = bets.filter(b => !b.isLay);
       if (filteredBets.length === 0) {
         container.innerHTML = '<div class="small">No bets to display (all bets are lay bets). Uncheck "Hide Lay Bets" to see them.</div>';
+        return;
+      }
+    }
+
+    // Filter to pending bets only if showPendingOnly is true
+    if (showPendingOnly) {
+      filteredBets = filteredBets.filter(b => !b.status || b.status === 'pending');
+      if (filteredBets.length === 0) {
+        container.innerHTML = '<div class="small">No pending bets to display. Uncheck "Pending Only" to see all bets.</div>';
         return;
       }
     }
@@ -911,12 +925,50 @@ document.addEventListener('DOMContentLoaded', () => {
         break;
     }
 
-    // Calculate running totals
+    // Calculate running totals from ALL bets (not filtered), for accurate P/L stats
     let runningProfit = 0;
     let totalStaked = 0;
     let settledBets = 0;
     let expectedProfitSettled = 0; // EV for settled bets only
     let totalEV = 0; // EV for all bets (pending + settled)
+
+    // First pass: calculate totals from ALL bets (ignore filters)
+    bets.forEach((b) => {
+      const commission = getCommission(b.bookmaker);
+      // Normalize status the same way as elsewhere
+      let betStatus = b.status;
+      if (betStatus && typeof betStatus === 'string') {
+        betStatus = betStatus.trim().toLowerCase();
+      }
+      
+      totalStaked += parseFloat(b.stake) || 0;
+      const expectedValue = calculateExpectedValueAmount(b);
+      totalEV += expectedValue;
+
+      if (betStatus === 'won') {
+        settledBets++;
+        expectedProfitSettled += expectedValue;
+        if (b.isLay) {
+          const gross = parseFloat(b.stake) || 0;
+          const commissionAmount = commission > 0 ? (gross * commission / 100) : 0;
+          runningProfit += gross - commissionAmount;
+        } else {
+          const grossProfit = (parseFloat(b.stake) * parseFloat(b.odds)) - parseFloat(b.stake);
+          const commissionAmount = commission > 0 ? (grossProfit * commission / 100) : 0;
+          runningProfit += grossProfit - commissionAmount;
+        }
+      } else if (betStatus === 'lost') {
+        settledBets++;
+        expectedProfitSettled += expectedValue;
+        if (b.isLay) {
+          runningProfit -= parseFloat(b.stake) * (parseFloat(b.odds) - 1);
+        } else {
+          runningProfit -= parseFloat(b.stake);
+        }
+      }
+    });
+    
+    console.log('📊 P/L Summary calculated from ALL bets:', { runningProfit, totalStaked, settledBets, totalEV });
 
     const rows = sortedBets.map((b, idx) => {
       const betKey = getBetKey(b);
@@ -955,9 +1007,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Calculate expected value (EV) from overvalue
       const expectedValue = calculateExpectedValueAmount(b);
-
-      // Add to total EV for all bets
-      totalEV += expectedValue;
 
       // Calculate liquidity tier and Kelly metrics for visual indicators
       const limitVal = parseFloat(b.limit) || 0;
@@ -999,15 +1048,6 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         }
         // void bets don't affect P/L
-      }
-
-      if (b.status && b.status !== 'pending') {
-        runningProfit += actualPL;
-        settledBets++;
-        expectedProfitSettled += expectedValue;
-      }
-      if (b.stake) {
-        totalStaked += parseFloat(b.stake);
       }
 
       // Status badge
@@ -1355,6 +1395,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function loadAndRender() {
     const sortBy = document.getElementById('sort-select')?.value || 'saved-desc';
     const hideLayBets = uiPreferences.hideLayBets || false;
+    const showPendingOnly = uiPreferences.showPendingOnly || false;
     api.storage.local.get({ bets: [], stakingSettings: DEFAULT_STAKING_SETTINGS }, (res) => {
       let bets = res.bets || [];
       const stakingSettings = res.stakingSettings || DEFAULT_STAKING_SETTINGS;
@@ -1391,10 +1432,10 @@ document.addEventListener('DOMContentLoaded', () => {
       if (needsCleanup) {
         console.log('💾 Saving cleaned bets to storage...');
         api.storage.local.set({ bets }, () => {
-          render(bets, sortBy, hideLayBets);
+          render(bets, sortBy, hideLayBets, showPendingOnly);
         });
       } else {
-        render(bets, sortBy, hideLayBets);
+        render(bets, sortBy, hideLayBets, showPendingOnly);
       }
     });
   }
@@ -1410,8 +1451,20 @@ document.addEventListener('DOMContentLoaded', () => {
   if (hideLayBetsCheckbox) {
     hideLayBetsCheckbox.addEventListener('change', () => {
       const hideLayBets = hideLayBetsCheckbox.checked;
-      api.storage.local.set({ uiPreferences: { hideLayBets } }, () => {
+      api.storage.local.set({ uiPreferences: { ...uiPreferences, hideLayBets } }, () => {
         console.log('💾 UI preference saved: hideLayBets =', hideLayBets);
+        loadAndRender();
+      });
+    });
+  }
+
+  // Show pending only checkbox handler
+  const showPendingOnlyCheckbox = document.getElementById('show-pending-only');
+  if (showPendingOnlyCheckbox) {
+    showPendingOnlyCheckbox.addEventListener('change', () => {
+      const showPendingOnly = showPendingOnlyCheckbox.checked;
+      api.storage.local.set({ uiPreferences: { ...uiPreferences, showPendingOnly } }, () => {
+        console.log('💾 UI preference saved: showPendingOnly =', showPendingOnly);
         loadAndRender();
       });
     });

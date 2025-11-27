@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Significance Indicators**: Visual de-emphasis (50% opacity) for metrics with low sample size (n<20).
 - **Deviation Analysis**: All tables now show actual vs expected win rate deviation (+/- %).
 - **Enhanced Export**: JSON exports now include all new performance metrics.
+- **Debug Export (Pending Bets)**: Added a Settings → Data → Debug Export option to export pending bets as JSON for debugging CSV import and pending-state issues.
 
 ---
 

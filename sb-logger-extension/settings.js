@@ -351,6 +351,47 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
 
+    // Export pending bets (debug)
+    const exportPendingBtn = document.getElementById('export-pending-btn');
+    if (exportPendingBtn) {
+      exportPendingBtn.addEventListener('click', () => {
+        api.storage.local.get({ bets: [] }, (res) => {
+          const allBets = res.bets || [];
+          const pendingBets = allBets.filter(b => b.status === 'pending' || !b.status);
+          
+          if (pendingBets.length === 0) {
+            alert('ℹ️ No pending bets to export.');
+            return;
+          }
+          
+          const exportData = {
+            exportDate: new Date().toISOString(),
+            pendingBetCount: pendingBets.length,
+            bets: pendingBets
+          };
+          
+          const dataStr = JSON.stringify(exportData, null, 2);
+          const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+          const filename = `pending-bets-debug-${timestamp}.json`;
+          
+          api.runtime.sendMessage({
+            action: 'export',
+            dataStr: dataStr,
+            filename: filename,
+            mime: 'application/json'
+          }, (resp) => {
+            if (resp && resp.success) {
+              console.log(`✅ Exported ${pendingBets.length} pending bet(s)`);
+              alert(`✅ Exported ${pendingBets.length} pending bet(s) to ${filename}`);
+            } else {
+              console.error('❌ Export failed:', resp?.error);
+              alert('❌ Export failed: ' + (resp?.error || 'Unknown error'));
+            }
+          });
+        });
+      });
+    }
+
     // Clear all bets
     const clearAllBtn = document.getElementById('clear-all-btn');
     if (clearAllBtn) {

@@ -63,6 +63,8 @@
 7. **Track performance**: See your running P/L and ROI at the top of the popup
 8. **View Chart**: Click 📊 View Chart to see a visual graph of your P/L vs Expected EV over time
 9. Use **Export JSON** or **Export CSV** to download, or **Clear All** to delete
+   
+  For debugging CSV import issues: you can export only pending (unsettled) bets from the extension settings: **⚙️ Settings → 🗑️ Data → 🐛 Debug Export → Export Pending Bets (JSON)**. This is useful when you want to reproduce an import parser issue or inspect unsettled data.
 
 ## Auto-Fill Stakes (Complete Feature - v1.0.37!)
 
