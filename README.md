@@ -40,11 +40,7 @@ A powerful browser extension for tracking and analyzing value bets from surebet.
 - **Real-Time Summary**: View current bankroll, P/L, and status in Settings tab
 
 ### 🔧 Convenience Features
-- **Bookmaker Filter Presets**: Quick-apply your favorite bookmaker combinations
-- **Exchange Commission Support**: Built-in support for Betfair, Betdaq, Matchbook, Smarkets
-- **Stake Rounding**: Optional auto-rounding to nearest increment (e.g., £0.50)
-- **Data Management**: Clear all bets with double-confirmation safety
-- **Minimal 4-Button Popup**: Streamlined interface with only essential buttons
+ - **Debug Logging & Export**: Per-bet debug logs are captured for auto-fill attempts (selector matches, timing, failures) and are included in pending-bets JSON exports for troubleshooting.
 
 ---
 

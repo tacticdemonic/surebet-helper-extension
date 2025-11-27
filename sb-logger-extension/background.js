@@ -24,6 +24,21 @@ const DEFAULT_COMMISSION_RATES = {
 // Use chrome API when available (Firefox provides chrome shim), fallback to browser
 const api = typeof chrome !== 'undefined' ? chrome : browser;
 
+function getStorageSizeKB() {
+  return new Promise((resolve) => {
+    try {
+      api.storage.local.getBytesInUse(null, (bytes) => {
+        const kb = Math.round(bytes / 1024);
+        const warning = kb > 4096; // 4MB threshold
+        resolve({ kb, bytes, warning });
+      });
+    } catch (err) {
+      console.error('[Surebet Helper Background] Storage size check error:', err);
+      resolve({ kb: 0, bytes: 0, warning: false });
+    }
+  });
+}
+
 function sanitizeBankroll(value, fallback = DEFAULT_STAKING_SETTINGS.bankroll) {
   const parsed = parseFloat(value);
   if (!isFinite(parsed)) {
@@ -611,6 +626,14 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
 
       sendResponse({ success: true, betData });
+    })();
+    return true;
+  }
+  
+  if (message.action === 'checkStorageSize') {
+    (async () => {
+      const sizeInfo = await getStorageSizeKB();
+      sendResponse({ success: true, ...sizeInfo });
     })();
     return true;
   }

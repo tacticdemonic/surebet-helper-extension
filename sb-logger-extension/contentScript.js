@@ -12,6 +12,69 @@ function () {
   // Cache for retrieved bet data to prevent multiple consumers from triggering double-clears
   let cachedPendingBet = null;
   let cachedPendingBetPromise = null;
+  
+  // Debug Logger for auto-fill diagnostics
+  class BetDebugLogger {
+    constructor() {
+      this.sessionId = Date.now().toString(36) + Math.random().toString(36).substr(2);
+      this.logs = [];
+      this.exchange = this.detectExchange();
+    }
+    
+    detectExchange() {
+      const hostname = location.hostname.toLowerCase();
+      if (hostname.includes('betfair')) return 'betfair';
+      if (hostname.includes('smarkets')) return 'smarkets';
+      if (hostname.includes('matchbook')) return 'matchbook';
+      if (hostname.includes('betdaq')) return 'betdaq';
+      return 'unknown';
+    }
+    
+    log(component, message, data = {}, level = 'info') {
+      const entry = {
+        ts: new Date().toISOString(),
+        sessionId: this.sessionId,
+        component,
+        level,
+        msg: message,
+        data,
+        url: location.href,
+        exchange: this.exchange
+      };
+      this.logs.push(entry);
+      const prefix = `Surebet Helper [${component}]:`;
+      if (level === 'error') console.error(prefix, message, data);
+      else if (level === 'warn') console.warn(prefix, message, data);
+      else console.log(prefix, message, data);
+      return entry;
+    }
+    
+    getLogs() {
+      return this.logs;
+    }
+    
+    attachToBet(bet) {
+      if (!bet.debugLogs) bet.debugLogs = [];
+      bet.debugLogs.push(...this.logs);
+      return bet;
+    }
+  }
+  
+  let debugLogger = new BetDebugLogger();
+  
+  // Utility to filter debug logs to last 24 hours
+  function filterLogsLast24Hours(logs) {
+    if (!Array.isArray(logs)) return [];
+    const cutoffTime = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    return logs.filter(log => {
+      try {
+        return new Date(log.ts) >= cutoffTime;
+      } catch {
+        return false;
+      }
+    });
+  }
+  
   const clickHandlers = {
     surebetLink: null,
     global: null
@@ -99,81 +162,145 @@ function () {
   const BETTING_SLIP_SELECTORS = {
     betfair: {
       bettingSlip: [
+        // New Betfair Exchange layout (2024+)
+        '[data-testid="betslip-container"]',
+        '[class*="BetslipContainer"]',
+        '[class*="betslip-container"]',
+        // Legacy selectors
         '[class*="betslip"]',
         '[class*="bet-slip"]',
         '[data-testid*="betslip"]',
-        '#betslip'
+        '#betslip',
+        // Mobile/responsive variants
+        '[class*="BetSlip"]'
       ],
       stakeInput: [
+        // New Betfair Exchange layout (2024+) - most specific first
+        '[data-testid="betslip-stake-input"] input',
+        '[data-testid="stake-input"]',
+        'input[data-testid*="stake"]',
+        // Legacy Angular selectors
         'input.betslip-size-input[ng-model*="size"]',
         'input[bf-number-restrict]',
         'input.betslip-size-input',
+        // Generic fallbacks
         'input[name="stake"]',
-        'input[data-testid*="stake"]',
-        'input[placeholder*="stake" i]'
+        'input[placeholder*="stake" i]',
+        'input[aria-label*="stake" i]',
+        // React component selectors
+        '[class*="StakeInput"] input',
+        '[class*="stake-input"] input'
       ],
-      backBet: '[data-side="back"]',
-      layBet: '[data-side="lay"]',
-      odds: '[class*="odds"], [class*="price"], [data-testid*="odds"]',
-      selection: '[class*="selection"], [class*="leg"]'
+      backBet: '[data-side="back"], [class*="back-bet"], [data-testid*="back"]',
+      layBet: '[data-side="lay"], [class*="lay-bet"], [data-testid*="lay"]',
+      odds: '[class*="odds"], [class*="price"], [data-testid*="odds"], [class*="Price"]',
+      selection: '[class*="selection"], [class*="leg"], [class*="Selection"], [class*="runner-name"]'
     },
     smarkets: {
       bettingSlip: [
+        // Primary Smarkets containers (checked Nov 2025)
         '.bet-slip-container',
         '.bet-slip-content',
-        '.bet-slip-bets-container'
+        '.bet-slip-bets-container',
+        // Alternative React component names
+        '[class*="betSlip"]',
+        '[class*="BetSlip"]',
+        '[data-testid*="bet-slip"]',
+        // Sidebar container (fallback)
+        '[class*="right-sidebar"]',
+        '[class*="RightSidebar"]'
       ],
       stakeInput: [
+        // Primary Smarkets stake selectors (checked Nov 2025)
         '.bet-slip-container input.box-input.numeric-value.input-value.with-prefix',
         '.bet-slip-container input.box-input.numeric-value.input-value:not([disabled])',
-        'input[type="text"].box-input.numeric-value.with-prefix'
+        // Broader match without container scope (for DOM changes)
+        'input.box-input.numeric-value.input-value.with-prefix',
+        'input.box-input.numeric-value.input-value:not([disabled])',
+        // Generic class match
+        'input[type="text"].box-input.numeric-value.with-prefix',
+        'input.box-input.numeric-value:not([disabled])',
+        // React-based selectors (alternative names)
+        '[class*="stake-input"] input',
+        '[class*="StakeInput"] input',
+        // Placeholder-based fallback
+        'input[placeholder*="stake" i]',
+        'input[placeholder*="£"]',
+        'input[placeholder*="€"]'
       ],
-      odds: '[class*="odds"], [class*="price"]',
-      selection: '[class*="selection"]'
+      odds: '[class*="odds"], [class*="price"], [class*="Odds"], [class*="Price"]',
+      selection: '[class*="selection"], [class*="Selection"], [class*="event-name"]'
     },
     matchbook: {
       bettingSlip: [
+        // Primary Matchbook selectors
         '.Betslip-module__betslip',
         '[class*="Betslip-module"]',
         '[data-hook*="betslip"]',
         '.Offers-module__offers',
-        '[class*="RightSidebar"]'
+        '[class*="RightSidebar"]',
+        // Alternative React class names
+        '[class*="betslip"]',
+        '[class*="Betslip"]'
       ],
       stakeInput: [
+        // Primary Matchbook stake selectors
         'input[data-hook^="betslip-stake-"]',
+        'input[data-hook*="stake"]',
         'input[name="backInput"][class*="OfferEdit-module__betslipInput"]',
         'input[class*="OfferEdit-module__betslipInput"]',
-        'input[placeholder*="stake" i]'
+        // Fallback generic selectors
+        'input[placeholder*="stake" i]',
+        'input[aria-label*="stake" i]',
+        '[class*="StakeInput"] input'
       ],
       odds: [
         'input[data-hook^="betslip-back-"]',
+        'input[data-hook*="odds"]',
         'input[name="oddsInput"][class*="OfferEdit-module__betslipInput"]',
         'input[class*="odds"], [class*="price"]'
       ],
-      selection: '[class*="selection"]'
+      selection: '[class*="selection"], [class*="Selection"], [class*="runner"]'
     },
     betdaq: {
       bettingSlip: [
+        // Primary Betdaq selectors (checked Nov 2025)
         '.betslip-container',
+        '.betslip-common-wrapper',
         '.betslip3',
         '#betslip',
-        '.betslip-common-wrapper'
+        // Alternative class patterns
+        '[class*="betslip"]',
+        '[class*="Betslip"]',
+        // Angular component wrapper
+        'betslip-component'
       ],
       stakeInput: [
+        // Back bet stake inputs (most specific first)
         '.back.polarity input.input.stake',
+        '.back.polarity input.stake',
+        // Container-scoped selectors
         '.betslip-container input.input.stake',
+        '.betslip-common-wrapper input.input.stake',
         '.betslip3 input.input.stake',
         '#betslip input.input.stake',
-        'input.input.stake'
+        // Generic stake input (fallback)
+        'input.input.stake',
+        'input.stake:not([disabled])',
+        // Placeholder-based fallback
+        'input[placeholder*="stake" i]'
       ],
       odds: [
         '.back.polarity input.input.odds',
+        '.back.polarity input.odds',
         '.betslip-container input.input.odds',
+        '.betslip-common-wrapper input.input.odds',
         '.betslip3 input.input.odds',
         '#betslip input.input.odds',
-        'input.input.odds'
+        'input.input.odds',
+        'input.odds:not([disabled])'
       ],
-      selection: '.selname, .event-name'
+      selection: '.selname, .event-name, [class*="selection"], [class*="runner"]'
     }
   };
   
@@ -2029,7 +2156,8 @@ function () {
         bk_margin: parseFloat(jsonData.bk_margin) || 0,
         limit: parseFloat(jsonData.limit) || 0,
         currency: jsonData.currency || 'GBP',
-        isLay: isLayBet
+        isLay: isLayBet,
+        debugLogs: []
       };
       
       // Clean up market text (remove HTML tags)
@@ -2228,8 +2356,10 @@ function () {
     if (typeof selectors === 'string') {
       selectors = [selectors];
     }
+    let selectorsTried = [];
     for (const selector of selectors) {
       try {
+        selectorsTried.push(selector);
         const element = document.querySelector(selector);
         if (element) {
           // Never return elements from the extension's own UI
@@ -2250,12 +2380,15 @@ function () {
             continue;
           }
           console.log('Surebet Helper: Found element with selector:', selector);
+          debugLogger.log('selector', 'Element found', { selector, total: selectors.length, attempt: selectorsTried.length });
           return element;
         }
       } catch (e) {
         console.warn('Surebet Helper: Invalid selector:', selector, e);
+        debugLogger.log('selector', 'Invalid selector', { selector, error: e.message }, 'warn');
       }
     }
+    debugLogger.log('selector', 'No matching selector found', { totalTried: selectorsTried.length, selectors: selectorsTried.slice(0, 3) }, 'warn');
     return null;
   }
 
@@ -2294,15 +2427,20 @@ function () {
     const selectors = BETTING_SLIP_SELECTORS[exchange];
     if (!selectors) {
       console.warn('Surebet Helper: No selectors defined for exchange:', exchange);
+      debugLogger.log('findStakeInput', 'No selectors defined', { exchange }, 'warn');
       return null;
     }
+
+    debugLogger.log('findStakeInput', 'Looking for stake input', { exchange, isLay });
 
     // For exchanges with separate back/lay inputs, try to find the correct one
     if (isLay && selectors.layBet) {
       const layContainer = document.querySelector(selectors.layBet);
       if (layContainer) {
+        debugLogger.log('findStakeInput', 'Lay bet container found');
         const input = findElement(selectors.stakeInput);
         if (input && input.closest(selectors.layBet)) {
+          debugLogger.log('findStakeInput', 'Lay stake input matched');
           return input;
         }
       }
@@ -2311,8 +2449,10 @@ function () {
     if (!isLay && selectors.backBet) {
       const backContainer = document.querySelector(selectors.backBet);
       if (backContainer) {
+        debugLogger.log('findStakeInput', 'Back bet container found');
         const input = findElement(selectors.stakeInput);
         if (input && input.closest(selectors.backBet)) {
+          debugLogger.log('findStakeInput', 'Back stake input matched');
           return input;
         }
       }
@@ -2320,6 +2460,7 @@ function () {
 
     // Fallback: just find any stake input
     const stakeInput = findElement(selectors.stakeInput);
+    debugLogger.log('findStakeInput', 'Fallback search result', { exchange, found: !!stakeInput });
     console.log('Surebet Helper: findStakeInput result:', stakeInput, 'for exchange:', exchange);
     return stakeInput;
   }
@@ -2328,23 +2469,28 @@ function () {
     const selectors = BETTING_SLIP_SELECTORS[exchange];
     if (!selectors) {
       console.error('Surebet Helper: Unknown exchange:', exchange);
+      debugLogger.log('waitForBettingSlip', 'Unknown exchange', { exchange }, 'error');
       return null;
     }
 
     console.log('Surebet Helper: Waiting for betting slip on', exchange);
+    const startTime = Date.now();
+    debugLogger.log('waitForBettingSlip', 'Waiting for betting slip', { exchange, maxAttempts, pollDelay });
     
     return new Promise((resolve) => {
       let attempts = 0;
 
       const checkBettingSlip = () => {
         attempts++;
-        console.log(`Surebet Helper: Betting slip check attempt ${attempts}/${maxAttempts}`);
+        const elapsed = Date.now() - startTime;
+        console.log(`Surebet Helper: Betting slip check attempt ${attempts}/${maxAttempts} (${elapsed}ms)`);
 
         // Try to find the betting slip container
         const bettingSlip = findElement(selectors.bettingSlip);
         
         if (bettingSlip && isElementVisible(bettingSlip) && isBettingSlipPopulated(bettingSlip, exchange)) {
           console.log('Surebet Helper: ✓ Betting slip found and populated');
+          debugLogger.log('waitForBettingSlip', 'Betting slip found', { attempt: attempts, elapsed });
           
           // Debug: Try direct querySelector for Betdaq
           if (exchange === 'betdaq') {
@@ -2359,10 +2505,12 @@ function () {
           const stakeInput = findStakeInput(exchange);
           if (stakeInput && isElementVisible(stakeInput)) {
             console.log('Surebet Helper: ✓ Stake input found and visible');
+            debugLogger.log('waitForBettingSlip', 'Stake input found and visible', { attempt: attempts, elapsed });
             resolve({ bettingSlip, stakeInput });
             return;
           } else {
             console.log('Surebet Helper: Stake input not yet ready, stakeInput=', stakeInput);
+            debugLogger.log('waitForBettingSlip', 'Stake input not ready', { attempt: attempts, stakeInputFound: !!stakeInput });
           }
         } else {
           console.log('Surebet Helper: Betting slip not yet populated');
@@ -2370,6 +2518,7 @@ function () {
 
         if (attempts >= maxAttempts) {
           console.warn('Surebet Helper: Betting slip detection timeout after', maxAttempts * pollDelay, 'ms');
+          debugLogger.log('waitForBettingSlip', 'Timeout reached', { maxAttempts, totalElapsed: elapsed }, 'warn');
           resolve(null);
           return;
         }
@@ -2387,6 +2536,7 @@ function () {
     
     const stake = String(stakeValue).trim();
     console.log('Surebet Helper: Filling stake input with value:', stake);
+    debugLogger.log('fillStakeInput', 'Filling stake input', { stake }, 'info');
 
     // Set the value
     input.value = stake;
@@ -2398,32 +2548,58 @@ function () {
       new Event('blur', { bubbles: true })
     ];
 
+    let eventCount = 0;
     events.forEach(event => {
       try {
         input.dispatchEvent(event);
+        eventCount++;
       } catch (e) {
         console.warn('Surebet Helper: Error dispatching event:', e);
+        debugLogger.log('fillStakeInput', 'Error dispatching event', { event: event.type, error: e.message }, 'warn');
       }
     });
 
     console.log('Surebet Helper: ✓ Stake value filled and events dispatched');
+    debugLogger.log('fillStakeInput', 'Stake filled and events dispatched', { stake, eventsDispatched: eventCount });
     return true;
+  }
+
+  function updateBetWithDebugLogs(betData) {
+    if (!betData || !betData.id) return;
+    chrome.storage.local.get({ bets: [] }, (res) => {
+      const bets = res.bets || [];
+      const betIndex = bets.findIndex(b => b.id === betData.id);
+      if (betIndex >= 0) {
+        const existingBet = bets[betIndex];
+        // Merge debug logs and filter to last 24 hours
+        if (!existingBet.debugLogs) existingBet.debugLogs = [];
+        existingBet.debugLogs = existingBet.debugLogs.concat(betData.debugLogs || []);
+        existingBet.debugLogs = filterLogsLast24Hours(existingBet.debugLogs);
+        bets[betIndex] = existingBet;
+        chrome.storage.local.set({ bets }, () => {
+          console.log('Surebet Helper: Bet updated with debug logs');
+        });
+      }
+    });
   }
 
   async function autoFillBetSlip(betData) {
     if (!autoFillSettings.enabled) {
       console.log('Surebet Helper: Auto-fill is disabled');
+      debugLogger.log('autoFill', 'Auto-fill is disabled', {}, 'warn');
       return false;
     }
 
     if (!betData || !betData.stake) {
       console.warn('Surebet Helper: No bet data or stake available');
+      debugLogger.log('autoFill', 'No bet data or stake available', { betData: !!betData, stake: betData?.stake }, 'error');
       return false;
     }
 
     const exchange = getExchangeFromHostname();
     if (!exchange) {
       console.warn('Surebet Helper: Could not detect exchange');
+      debugLogger.log('autoFill', 'Could not detect exchange', { hostname: location.hostname }, 'error');
       return false;
     }
 
@@ -2431,21 +2607,32 @@ function () {
     const exchangeEnabled = autoFillSettings.bookmakers?.[exchange] !== false;
     if (!exchangeEnabled) {
       console.log('Surebet Helper: Auto-fill disabled for', exchange);
+      debugLogger.log('autoFill', 'Auto-fill disabled for exchange', { exchange }, 'warn');
       return false;
     }
 
     console.log('Surebet Helper: Starting auto-fill for', exchange, 'stake:', betData.stake);
+    debugLogger.log('autoFill', 'Starting auto-fill', {
+      exchange,
+      stake: betData.stake,
+      event: betData.event,
+      betId: betData.id,
+      timeout: autoFillSettings.timeout
+    });
 
     // Start MutationObserver to detect betting slip
     return new Promise(async (resolve) => {
       let detected = false;
-      const timeout = setTimeout(() => {
+      const timeout = setTimeout(async () => {
         if (detected) return;
         console.warn('Surebet Helper: Auto-fill timeout reached');
+        debugLogger.log('autoFill', 'Auto-fill timeout reached', { exchange }, 'warn');
         if (bettingSlipDetector) {
           bettingSlipDetector.disconnect();
           bettingSlipDetector = null;
         }
+        // Attach logs to bet before returning
+        debugLogger.attachToBet(betData);
         resolve(false);
       }, autoFillSettings.timeout);
 
@@ -2462,6 +2649,7 @@ function () {
           const siteConfig = SUPPORTED_SITES[exchange] || {};
           const maxAttempts = siteConfig.asyncLoading ? 30 : 10;
           const pollDelay = siteConfig.asyncLoading ? 300 : 200;
+          debugLogger.log('autoFill', 'Waiting for betting slip', { exchange, maxAttempts, pollDelay });
           const result = await waitForBettingSlip(exchange, maxAttempts, pollDelay);
           if (result && result.bettingSlip && result.stakeInput) {
             // Validate odds haven't changed (Smarkets)
@@ -2472,26 +2660,38 @@ function () {
                 const expectedOdds = parseFloat(betData.odds);
                 if (Math.abs(currentOdds - expectedOdds) > 0.01) {
                   console.warn(`Surebet Helper: ⚠️ Odds changed! Expected ${expectedOdds.toFixed(2)}, found ${currentOdds.toFixed(2)}`);
+                  debugLogger.log('autoFill', 'Odds changed', { expected: expectedOdds, current: currentOdds }, 'warn');
                   showToast(`⚠️ Odds changed! Expected ${expectedOdds.toFixed(2)}, now ${currentOdds.toFixed(2)}`, false);
                 }
               }
             }
           }
           if (result && result.stakeInput) {
+            debugLogger.log('autoFill', 'Filling stake input', { stake: betData.stake, inputFound: true });
             const success = fillStakeInputValue(result.stakeInput, betData.stake);
             if (success) {
+              debugLogger.log('autoFill', 'Stake auto-filled successfully', { stake: betData.stake, currency: betData.currency });
               showToast(`✓ Stake auto-filled: ${betData.currency || '£'}${betData.stake}`, true, 2000);
+              // Attach logs and save bet
+              debugLogger.attachToBet(betData);
+              updateBetWithDebugLogs(betData);
               resolve(true);
             } else {
               console.warn('Surebet Helper: Failed to fill stake input');
+              debugLogger.log('autoFill', 'Failed to fill stake input', { stake: betData.stake }, 'error');
+              debugLogger.attachToBet(betData);
               resolve(false);
             }
           } else {
             console.warn('Surebet Helper: Could not find stake input for auto-fill');
+            debugLogger.log('autoFill', 'Could not find stake input', { resultExists: !!result }, 'error');
+            debugLogger.attachToBet(betData);
             resolve(false);
           }
         } catch (err) {
           console.error('Surebet Helper: Auto-fill error:', err);
+          debugLogger.log('autoFill', 'Auto-fill error', { error: err.message }, 'error');
+          debugLogger.attachToBet(betData);
           resolve(false);
         }
       }
@@ -2500,6 +2700,7 @@ function () {
       const immediateResult = await waitForBettingSlip(exchange, 1, 0);
       if (immediateResult && immediateResult.stakeInput) {
         console.log('Surebet Helper: Betting slip already present on page');
+        debugLogger.log('autoFill', 'Betting slip already present on page', {});
         detected = true;
         await performAutoFill();
         return;
@@ -2517,6 +2718,7 @@ function () {
               for (const slipSelector of selectors.bettingSlip) {
                 if (node.matches?.(slipSelector) || node.querySelector?.(slipSelector)) {
                   console.log('Surebet Helper: Betting slip detected via MutationObserver');
+                  debugLogger.log('autoFill', 'Betting slip detected via MutationObserver', { selector: slipSelector });
                   detected = true;
                   performAutoFill();
                   return;
@@ -2542,6 +2744,7 @@ function () {
         const result = await waitForBettingSlip(exchange, 1, 0);
         if (result && result.stakeInput) {
           console.log('Surebet Helper: Betting slip detected via polling');
+          debugLogger.log('autoFill', 'Betting slip detected via polling', { pollCount });
           detected = true;
           performAutoFill();
         }
@@ -2554,16 +2757,19 @@ function () {
   async function getSurebetDataFromReferrer() {
     const retrievalTimestamp = new Date().toISOString();
     console.log(`Surebet Helper: [${retrievalTimestamp}] Starting Smarkets retrieval - querying broker for pendingBet`);
+    debugLogger.log('betRetrieval', 'Starting bet data retrieval from broker', { timestamp: retrievalTimestamp });
     
     // Use cached promise if already in flight (prevents multiple consumers from consuming twice)
     if (cachedPendingBetPromise) {
       console.log('Surebet Helper: ℹ Reusing in-flight broker query');
+      debugLogger.log('betRetrieval', 'Reusing in-flight broker query', {});
       return cachedPendingBetPromise;
     }
     
     // If already cached, return immediately
     if (cachedPendingBet !== null) {
       console.log(`Surebet Helper: ℹ Returning cached pendingBet (ID: ${cachedPendingBet ? cachedPendingBet.id : 'none'})`);
+      debugLogger.log('betRetrieval', 'Returning cached bet', { betId: cachedPendingBet?.id });
       return cachedPendingBet;
     }
     
@@ -2571,6 +2777,7 @@ function () {
     cachedPendingBetPromise = (async () => {
       try {
         // 1. BROKER: Query background context for pendingBet (cross-origin safe)
+        debugLogger.log('betRetrieval', 'Querying broker for pending bet', {});
         const brokerResult = await new Promise((resolve, reject) => {
           const timeout = setTimeout(() => {
             reject(new Error('Broker timeout'));
@@ -2593,16 +2800,20 @@ function () {
           cachedPendingBet = brokerResult.betData;
           console.log(`Surebet Helper: ✓ Broker returned pendingBet (ID: ${cachedPendingBet.id})`);
           console.log('Surebet Helper: Retrieved bet data from broker:', cachedPendingBet);
+          debugLogger.log('betRetrieval', 'Broker returned pending bet', { betId: cachedPendingBet.id, success: true });
           return cachedPendingBet;
         } else {
           console.log('Surebet Helper: Broker found no pendingBet, trying fallbacks');
+          debugLogger.log('betRetrieval', 'Broker found no pending bet, trying fallbacks', {}, 'warn');
         }
       } catch (err) {
         console.warn(`Surebet Helper: ⚠ Broker query failed (${err.message}), trying fallbacks`);
+        debugLogger.log('betRetrieval', 'Broker query failed', { error: err.message }, 'warn');
       }
       
       // 2. FALLBACK: Try chrome.storage.local (async)
       try {
+        debugLogger.log('betRetrieval', 'Trying storage fallback', {});
         const result = await new Promise((resolve) => {
           setTimeout(() => {
             chrome.storage.local.get(['pendingBet'], (storageResult) => {
@@ -2619,6 +2830,7 @@ function () {
           cachedPendingBet = result;
           console.log(`Surebet Helper: ✓ Found pendingBet in chrome.storage.local (ID: ${result.id})`);
           console.log('Surebet Helper: Retrieved bet data from storage:', result);
+          debugLogger.log('betRetrieval', 'Found bet in storage', { betId: result.id }, 'info');
           
           // Clear after retrieval
           chrome.storage.local.remove('pendingBet', () => {
@@ -2629,11 +2841,13 @@ function () {
         }
       } catch (err) {
         console.warn(`Surebet Helper: ⚠ Storage fallback failed (${err.message})`);
+        debugLogger.log('betRetrieval', 'Storage fallback failed', { error: err.message }, 'warn');
       }
       
       // 3. FALLBACK: Try document.referrer
       if (document.referrer && document.referrer.includes('/nav/valuebet/prong/')) {
         console.log('Surebet Helper: Referrer detected from surebet.com');
+        debugLogger.log('betRetrieval', 'Using referrer fallback', { referrer: document.referrer.substring(0, 50) + '...' });
         const betData = parseSurebetLinkData(document.referrer);
         if (betData) {
           cachedPendingBet = betData;
@@ -3075,6 +3289,15 @@ function () {
         console.log('Surebet Helper: Surebet link clicked, sending bet data to broker');
         const betData = parseSurebetLinkData(link.href);
         if (betData) {
+          // Log bet save initiation
+          debugLogger.log('betSave', 'Bet data parsed from link', {
+            id: betData.id,
+            event: betData.event,
+            bookmaker: betData.bookmaker,
+            odds: betData.odds,
+            exchange: debugLogger.exchange
+          });
+          
           const timestamp = new Date().toISOString();
           console.log(`Surebet Helper: [${timestamp}] Broker saving pendingBet with ID: ${betData.id}`);
           
@@ -3101,14 +3324,17 @@ function () {
             if (response && response.success) {
               console.log(`Surebet Helper: ✓ Broker confirmed pendingBet saved (ID: ${betData.id})`);
               console.log('Surebet Helper: Bet data stored for bookmaker page:', betData);
+              debugLogger.log('betSave', 'Broker confirmed pendingBet saved', { id: betData.id });
               // Navigate to bookmaker
               window.location.href = link.href;
             } else {
               console.warn('Surebet Helper: ⚠ Broker save failed, navigating anyway');
+              debugLogger.log('betSave', 'Broker save failed', { id: betData.id }, 'warn');
               window.location.href = link.href;
             }
           } catch (err) {
             console.error('Surebet Helper: ⚠ Broker communication error:', err.message);
+            debugLogger.log('betSave', 'Broker communication error', { error: err.message }, 'error');
             // Navigate anyway to not block user
             window.location.href = link.href;
           }

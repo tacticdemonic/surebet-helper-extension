@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.78] - 2025-11-27
+
+### ✨ New Features & Fixes
+- **Per-bet Debug Logging**: Added `debugLogs` per bet (session-based, structured logs) capturing auto-fill attempts, selector diagnostics, and timing metrics.
+- **Export Debug Logs**: Export pending-bets JSON now includes `debugLogs` for each bet (Settings → Data → Debug Export and Analysis → Export)
+- **24-hour Log Retention**: Debug logs are filtered to the last 24 hours on save to prevent storage bloat.
+- **Storage Size Check**: Background added `checkStorageSize` action to warn when storage usage exceeds 4MB; popup shows warning during export preparation.
+- **Documentation**: Added `DEBUG_LOGGING_IMPLEMENTATION.md`, `DEBUG_LOGGING_QUICK_REFERENCE.md`, and `DEBUG_LOGGING_EXPORT_FIX.md` with usage and troubleshooting guidance.
+
+
 ## [1.0.76] - 2025-11-26
 
 ### ✨ New Features

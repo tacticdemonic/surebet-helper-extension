@@ -1473,8 +1473,14 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnJson) {
     btnJson.addEventListener('click', async () => {
       api.storage.local.get({ bets: [], stakingSettings: DEFAULT_STAKING_SETTINGS }, (res) => {
-        const data = res.bets || [];
+        const allBets = res.bets || [];
         const stakingSettings = res.stakingSettings || DEFAULT_STAKING_SETTINGS;
+        
+        // Ensure all bets have debugLogs field (for backward compatibility with old bets)
+        const data = allBets.map(bet => ({
+          ...bet,
+          debugLogs: bet.debugLogs || []
+        }));
         
         // Update cache first
         updateCache(data, stakingSettings);
@@ -1484,6 +1490,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const bookmakerStats = liquidityCache.bookmakerStats;
         const temporalStats = liquidityCache.temporalStats;
         const kellyStats = liquidityCache.kellyStats;
+        
+        // Check storage size
+        api.runtime.sendMessage({ action: 'checkStorageSize' }, (sizeResp) => {
+          if (api.runtime.lastError) {
+            console.warn('Storage size check failed:', api.runtime.lastError);
+          } else {
+            console.log('Storage info:', sizeResp);
+          }
+        });
         
         // Create export object with both bet data and analysis
         const exportData = {
@@ -1513,7 +1528,7 @@ document.addEventListener('DOMContentLoaded', () => {
             alert('Export failed: ' + api.runtime.lastError.message);
           } else if (resp && resp.success) {
             console.log('✅ Export successful');
-            alert('JSON exported successfully with liquidity analysis!');
+            alert('JSON exported successfully with liquidity analysis and debug logs!');
           } else if (resp && resp.error) {
             alert('Export failed: ' + resp.error);
           }

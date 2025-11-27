@@ -364,10 +364,16 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
           }
           
+          // Ensure all bets have debugLogs field (for backward compatibility)
+          const betsWithLogs = pendingBets.map(bet => ({
+            ...bet,
+            debugLogs: bet.debugLogs || []
+          }));
+          
           const exportData = {
             exportDate: new Date().toISOString(),
-            pendingBetCount: pendingBets.length,
-            bets: pendingBets
+            pendingBetCount: betsWithLogs.length,
+            bets: betsWithLogs
           };
           
           const dataStr = JSON.stringify(exportData, null, 2);
@@ -381,8 +387,8 @@ document.addEventListener('DOMContentLoaded', () => {
             mime: 'application/json'
           }, (resp) => {
             if (resp && resp.success) {
-              console.log(`✅ Exported ${pendingBets.length} pending bet(s)`);
-              alert(`✅ Exported ${pendingBets.length} pending bet(s) to ${filename}`);
+              console.log(`✅ Exported ${betsWithLogs.length} pending bet(s) with debug logs`);
+              alert(`✅ Exported ${betsWithLogs.length} pending bet(s) to ${filename}`);
             } else {
               console.error('❌ Export failed:', resp?.error);
               alert('❌ Export failed: ' + (resp?.error || 'Unknown error'));
