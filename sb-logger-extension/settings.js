@@ -714,40 +714,53 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     
+    // Store entries for detail view
+    window._diagnosticEntries = entries;
+    
     let html = '';
-    for (const entry of entries) {
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i];
       const time = new Date(entry.timestamp).toLocaleString();
       let bgColor = '#fff';
       let icon = '📝';
+      let borderColor = '#28a745';
       
       switch (entry.type) {
         case 'api_response':
           icon = '📡';
           bgColor = '#e7f3ff';
+          borderColor = '#007bff';
           break;
         case 'match_success':
           icon = '✅';
           bgColor = '#d4edda';
+          borderColor = '#28a745';
           break;
         case 'match_failure':
           icon = '❌';
           bgColor = '#f8d7da';
+          borderColor = '#dc3545';
           break;
         case 'api_error':
           icon = '⚠️';
           bgColor = '#fff3cd';
+          borderColor = '#ffc107';
           break;
         case 'unsupported_sport':
           icon = '🚫';
           bgColor = '#f8d7da';
+          borderColor = '#dc3545';
           break;
         case 'result_determined':
           icon = '🎯';
           bgColor = '#d4edda';
+          borderColor = '#28a745';
           break;
       }
       
       let details = '';
+      let extraInfo = '';
+      
       if (entry.type === 'api_response') {
         details = `${entry.sport} - ${entry.date} - ${entry.fixtureCount} fixtures`;
         if (entry.sampleFixtures && entry.sampleFixtures.length > 0) {
@@ -755,33 +768,88 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       } else if (entry.type === 'match_success') {
         details = `${entry.betEvent || 'Unknown'} → ${entry.matchedFixture}`;
+        extraInfo = `Match type: ${entry.matchType || 'unknown'}`;
       } else if (entry.type === 'match_failure') {
-        details = `${entry.bet?.event || 'Unknown'} - ${entry.reason}`;
+        details = `<strong>${entry.bet?.event || 'Unknown'}</strong>`;
+        extraInfo = `Reason: ${entry.reason}`;
+        
+        // Show searched teams
+        if (entry.searchedTeams) {
+          details += `<br><span style="color: #666; font-size: 10px;">Searched: "${entry.searchedTeams.team1?.normalized || entry.searchedTeams.team1}" vs "${entry.searchedTeams.team2?.normalized || entry.searchedTeams.team2}"</span>`;
+        }
+        
+        // Show top candidates with similarity scores
         if (entry.topCandidates && entry.topCandidates.length > 0) {
-          details += `<br><span style="color: #666; font-size: 10px;">Candidates: ${entry.topCandidates.map(c => c.fixture + ' (' + c.score + ')').slice(0, 3).join(', ')}</span>`;
+          details += `<br><span style="color: #666; font-size: 10px;"><strong>Top candidates:</strong></span>`;
+          entry.topCandidates.slice(0, 3).forEach((c, idx) => {
+            const scoreColor = parseFloat(c.score) > 0.5 ? '#856404' : '#6c757d';
+            details += `<br><span style="color: ${scoreColor}; font-size: 10px; margin-left: 10px;">${idx + 1}. ${c.fixture} (${(parseFloat(c.score) * 100).toFixed(0)}%)</span>`;
+            if (c.sim1Home && c.sim2Away) {
+              details += `<span style="color: #888; font-size: 9px;"> [h1:${(parseFloat(c.sim1Home)*100).toFixed(0)}% a2:${(parseFloat(c.sim2Away)*100).toFixed(0)}%]</span>`;
+            }
+          });
+        }
+        
+        if (entry.totalFixturesSearched) {
+          extraInfo += ` | Searched ${entry.totalFixturesSearched} fixtures | Threshold: ${entry.matchThreshold || 0.65}`;
         }
       } else if (entry.type === 'api_error') {
         details = `${entry.sport} - ${entry.error}`;
       } else if (entry.type === 'unsupported_sport') {
         details = `${entry.sport} - ${entry.bet?.event || 'Unknown'}`;
       } else if (entry.type === 'result_determined') {
-        details = `${entry.bet?.event || 'Unknown'} → ${entry.outcome} (${entry.score})`;
+        details = `${entry.bet?.event || 'Unknown'} → <strong>${entry.outcome?.toUpperCase()}</strong> (${entry.score})`;
       } else {
         details = JSON.stringify(entry).substring(0, 100);
       }
       
       html += `
-        <div style="background: ${bgColor}; padding: 8px; margin-bottom: 6px; border-radius: 3px; border-left: 3px solid ${entry.type === 'match_failure' || entry.type === 'api_error' ? '#dc3545' : '#28a745'};">
+        <div class="diagnostic-entry" data-index="${i}" style="background: ${bgColor}; padding: 8px; margin-bottom: 6px; border-radius: 3px; border-left: 3px solid ${borderColor}; cursor: pointer;" onclick="showDiagnosticDetail(${i})">
           <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
             <span style="font-weight: 600;">${icon} ${entry.type}</span>
             <span style="color: #888; font-size: 10px;">${time}</span>
           </div>
           <div style="font-size: 11px;">${details}</div>
+          ${extraInfo ? `<div style="font-size: 10px; color: #666; margin-top: 4px;">${extraInfo}</div>` : ''}
+          <div style="font-size: 9px; color: #007bff; margin-top: 4px;">Click to view full details →</div>
         </div>
       `;
     }
     
     container.innerHTML = html;
+  }
+  
+  // Show diagnostic detail modal
+  window.showDiagnosticDetail = function(index) {
+    const entries = window._diagnosticEntries;
+    if (!entries || !entries[index]) return;
+    
+    const entry = entries[index];
+    const modal = document.getElementById('diagnostic-detail-modal');
+    const content = document.getElementById('diagnostic-detail-content');
+    
+    if (modal && content) {
+      content.textContent = JSON.stringify(entry, null, 2);
+      modal.style.display = 'block';
+    }
+  };
+  
+  // Close detail modal
+  const closeDetailModal = document.getElementById('close-detail-modal');
+  if (closeDetailModal) {
+    closeDetailModal.addEventListener('click', () => {
+      document.getElementById('diagnostic-detail-modal').style.display = 'none';
+    });
+  }
+  
+  // Close modal on background click
+  const detailModal = document.getElementById('diagnostic-detail-modal');
+  if (detailModal) {
+    detailModal.addEventListener('click', (e) => {
+      if (e.target === detailModal) {
+        detailModal.style.display = 'none';
+      }
+    });
   }
   
   // Set up diagnostics event listeners
@@ -835,6 +903,155 @@ document.addEventListener('DOMContentLoaded', () => {
   if (refreshRateLimitsBtn) {
     refreshRateLimitsBtn.addEventListener('click', () => {
       renderRateLimits();
+    });
+  }
+  
+  // ========== VERBOSE MODE TOGGLE ==========
+  const verboseToggle = document.getElementById('verbose-diagnostics-toggle');
+  if (verboseToggle) {
+    // Load current setting
+    api.storage.local.get({ verboseDiagnosticMode: false }, (res) => {
+      verboseToggle.checked = res.verboseDiagnosticMode || false;
+    });
+    
+    // Save on change
+    verboseToggle.addEventListener('change', () => {
+      const enabled = verboseToggle.checked;
+      api.storage.local.set({ verboseDiagnosticMode: enabled }, () => {
+        console.log('🔬 Verbose diagnostic mode:', enabled ? 'ENABLED' : 'DISABLED');
+        // Also notify background script to update the in-memory flag
+        api.runtime.sendMessage({ action: 'setVerboseDiagnosticMode', enabled }, (response) => {
+          if (response?.success) {
+            console.log('✅ Background updated verbose mode');
+          }
+        });
+      });
+    });
+  }
+  
+  // ========== TEST MATCH TOOL ==========
+  const testMatchBtn = document.getElementById('test-match-btn');
+  const testEventDate = document.getElementById('test-event-date');
+  
+  // Set default date to today
+  if (testEventDate) {
+    testEventDate.value = new Date().toISOString().split('T')[0];
+  }
+  
+  if (testMatchBtn) {
+    testMatchBtn.addEventListener('click', async () => {
+      const eventName = document.getElementById('test-event-name').value.trim();
+      const sport = document.getElementById('test-event-sport').value;
+      const date = document.getElementById('test-event-date').value;
+      const resultDiv = document.getElementById('test-match-result');
+      
+      if (!eventName) {
+        alert('Please enter an event name to test');
+        return;
+      }
+      
+      if (!date) {
+        alert('Please select a date');
+        return;
+      }
+      
+      testMatchBtn.disabled = true;
+      testMatchBtn.textContent = '🔄 Testing...';
+      resultDiv.style.display = 'block';
+      resultDiv.style.background = '#e7f3ff';
+      resultDiv.innerHTML = '<div style="color: #666;">Fetching fixtures and testing match...</div>';
+      
+      try {
+        // Send test request to background script
+        api.runtime.sendMessage({
+          action: 'testMatchEvent',
+          eventName,
+          sport,
+          date
+        }, (response) => {
+          testMatchBtn.disabled = false;
+          testMatchBtn.textContent = '🔍 Test Match';
+          
+          if (response?.error) {
+            resultDiv.style.background = '#f8d7da';
+            resultDiv.innerHTML = `<strong>❌ Error:</strong> ${response.error}`;
+            return;
+          }
+          
+          if (response?.matchFound) {
+            resultDiv.style.background = '#d4edda';
+            resultDiv.innerHTML = `
+              <strong>✅ Match Found!</strong><br>
+              <strong>Matched:</strong> ${response.matchedFixture}<br>
+              <strong>Match Type:</strong> ${response.matchType}<br>
+              <strong>Similarity:</strong> ${response.similarity || 'N/A'}<br>
+              <strong>Status:</strong> ${response.status || 'Unknown'}<br>
+              ${response.score ? `<strong>Score:</strong> ${response.score}` : ''}
+            `;
+          } else {
+            resultDiv.style.background = '#fff3cd';
+            let html = `
+              <strong>⚠️ No Match Found</strong><br>
+              <strong>Searched for:</strong> "${response.searchedTeams?.team1}" vs "${response.searchedTeams?.team2}"<br>
+              <strong>Fixtures searched:</strong> ${response.fixturesCount || 0}<br>
+              <br><strong>Top Candidates:</strong>
+            `;
+            
+            if (response.topCandidates && response.topCandidates.length > 0) {
+              html += '<div style="margin-top: 8px; max-height: 150px; overflow-y: auto;">';
+              response.topCandidates.forEach((c, i) => {
+                const scoreColor = parseFloat(c.score) > 0.5 ? '#856404' : '#6c757d';
+                html += `<div style="margin: 4px 0; padding: 4px; background: rgba(255,255,255,0.5); border-radius: 2px;">
+                  <span style="color: ${scoreColor}; font-weight: 600;">${i + 1}. ${c.fixture}</span>
+                  <span style="color: #666;"> (${(parseFloat(c.score) * 100).toFixed(0)}%)</span>
+                  ${c.sim1Home ? `<br><span style="font-size: 10px; color: #888;">Similarity: home1=${(parseFloat(c.sim1Home)*100).toFixed(0)}%, away2=${(parseFloat(c.sim2Away)*100).toFixed(0)}%</span>` : ''}
+                </div>`;
+              });
+              html += '</div>';
+            } else {
+              html += '<br><em>No candidates found. Check if the date is correct and API has data for this sport.</em>';
+            }
+            
+            resultDiv.innerHTML = html;
+          }
+        });
+      } catch (err) {
+        testMatchBtn.disabled = false;
+        testMatchBtn.textContent = '🔍 Test Match';
+        resultDiv.style.background = '#f8d7da';
+        resultDiv.innerHTML = `<strong>❌ Error:</strong> ${err.message}`;
+      }
+    });
+  }
+  
+  // ========== RETRY PENDING BETS ==========
+  const retryPendingBtn = document.getElementById('retry-pending-btn');
+  const retryPendingStatus = document.getElementById('retry-pending-status');
+  
+  if (retryPendingBtn) {
+    retryPendingBtn.addEventListener('click', () => {
+      retryPendingBtn.disabled = true;
+      retryPendingBtn.textContent = '🔄 Checking...';
+      if (retryPendingStatus) retryPendingStatus.textContent = 'Triggering result check...';
+      
+      api.runtime.sendMessage({ action: 'checkResults', force: true }, (response) => {
+        retryPendingBtn.disabled = false;
+        retryPendingBtn.textContent = '🔄 Retry All Pending Bets';
+        
+        if (response?.success) {
+          if (retryPendingStatus) {
+            retryPendingStatus.innerHTML = `<span style="color: #28a745;">✅ Check complete! ${response.checked || 0} bet(s) processed, ${response.settled || 0} settled.</span>`;
+          }
+          // Reload diagnostics to show new entries
+          setTimeout(() => {
+            loadDiagnosticLog().then(entries => renderDiagnosticLog(entries));
+          }, 1000);
+        } else {
+          if (retryPendingStatus) {
+            retryPendingStatus.innerHTML = `<span style="color: #dc3545;">❌ ${response?.error || 'Check failed'}</span>`;
+          }
+        }
+      });
     });
   }
   

@@ -110,6 +110,37 @@ Surebet Helper: ✓ Cleared pendingBet from storage after retrieval
 - Stake input found with `data-hook^="betslip-stake-"` selector
 - Stake value auto-fills without manual intervention
 
+---
+
+## CSV Import - Issue Reporting Implementation
+
+Added a `🐛 Report Match Issue` button to `import.html` that captures a `lastImportDebug` object during the import flow. The captured data is used to build a Markdown summary and optional JSON dump for GitHub issue reporting. This section documents the design and key implementation details:
+
+### Key files
+- `import.html` — UI for import and the Report Issue button + privacy modal
+- `import.js` — core logic: capture `lastImportDebug`, build markdown, copy JSON to clipboard, open GitHub issue
+
+### Data captured in `lastImportDebug`
+- `timestamp` — session timestamp
+- `csvFormat` — detected CSV format
+- `csvEntries` — raw CSV rows parsed into objects with `event, market, profitLoss`
+- `pendingBets` — pending bets read from storage when import ran
+- `matchAttempts` — per CSV entry candidate list with metrics and normalization results
+- `matchedCount`/`unmatchedCount`
+
+### Matching debug enhancements
+- `matchBetWithPLDebug(plEntry, allBets)` returns both `match` and `debugInfo` ({csvEntry, candidates, matched, matchReason})
+- `buildDebugReport()` builds a Markdown summary and a console-style `Match Attempt Log` for the top unmatched rows (first 5)
+- `openGitHubIssue()` copies the full JSON to the clipboard and attempts to open a pre-filled GitHub issue URL with a compact summary (falls back to truncated text and hints to paste the JSON)
+
+### Privacy and UX
+- Before opening issue: the Privacy modal confirms user intent
+- Full JSON is copied to clipboard (not uploaded) to avoid accidental data exposure
+
+### Testing and Debugging Workflow
+- Reproduce import failure → Click `🐛 Report Match Issue` → Verify clipboard contains JSON and GitHub page is opened → Paste JSON if needed → Submit issue
+
+
 ## Diagnostic Interpretation
 
 ### Scenario 1: ✓ Both Tests Pass

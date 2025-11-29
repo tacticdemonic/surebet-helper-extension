@@ -111,6 +111,86 @@
     .close-btn:hover {
       background: #5a6268;
     }
+    .report-issue-btn {
+      background: #6c757d;
+      margin-top: 15px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .report-issue-btn:hover {
+      background: #5a6268;
+    }
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.5);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+    }
+    .modal-overlay.active {
+      display: flex;
+    }
+    .modal-content {
+      background: white;
+      padding: 25px;
+      border-radius: 8px;
+      max-width: 500px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    }
+    .modal-content h3 {
+      margin-top: 0;
+      color: #dc3545;
+    }
+    .modal-content p {
+      line-height: 1.6;
+      color: #333;
+    }
+    .modal-content ul {
+      margin: 15px 0;
+      padding-left: 20px;
+    }
+    .modal-content li {
+      margin: 8px 0;
+    }
+    .modal-buttons {
+      display: flex;
+      gap: 10px;
+      margin-top: 20px;
+      justify-content: flex-end;
+    }
+    .modal-buttons button {
+      margin-top: 0;
+    }
+    .modal-cancel {
+      background: #6c757d;
+    }
+    .modal-confirm {
+      background: #dc3545;
+    }
+    .modal-confirm:hover {
+      background: #c82333;
+    }
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: #333;
+      color: white;
+      padding: 12px 20px;
+      border-radius: 4px;
+      z-index: 1001;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .toast.show {
+      opacity: 1;
+    }
   </style>
 </head>
 <body>
@@ -154,7 +234,39 @@
     </div>
 
     <div class="results" id="results"></div>
+    
+    <div id="report-issue-container" style="display: none; margin-top: 15px;">
+      <button class="report-issue-btn" id="report-issue-btn">
+        🐛 Report Match Issue
+      </button>
+      <p style="font-size: 12px; color: #666; margin-top: 8px;">
+        Having trouble with CSV matching? Report an issue with debug data to help us improve.
+      </p>
+    </div>
   </div>
+  
+  <!-- Privacy Warning Modal -->
+  <div class="modal-overlay" id="privacy-modal">
+    <div class="modal-content">
+      <h3>⚠️ Privacy Notice</h3>
+      <p>This will create a <strong>public</strong> GitHub issue containing:</p>
+      <ul>
+        <li>Your bet event names (e.g., "Manchester City vs Liverpool")</li>
+        <li>Market types (e.g., "Match Winner", "Over 2.5 Goals")</li>
+        <li>Stake amounts and P/L figures</li>
+        <li>Bookmaker names</li>
+      </ul>
+      <p>This data will be <strong>publicly visible</strong> to help debug the matching issue.</p>
+      <p><strong>Full debug data will be copied to your clipboard</strong> - paste it into the issue if the summary is truncated.</p>
+      <div class="modal-buttons">
+        <button class="modal-cancel" id="modal-cancel">Cancel</button>
+        <button class="modal-confirm" id="modal-confirm">I Understand, Continue</button>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Toast notification -->
+  <div class="toast" id="toast"></div>
 
   <script src="import.js"></script>
 </body>

@@ -221,9 +221,9 @@ async function getApiServiceInstance() {
     throw new Error('ApiService unavailable');
   }
   
-  // Load API keys from storage
+  // Load API keys and settings from storage
   const storageData = await new Promise((resolve) => {
-    chrome.storage.local.get({ apiKeys: {} }, resolve);
+    chrome.storage.local.get({ apiKeys: {}, verboseDiagnosticMode: false }, resolve);
   });
   
   const apiKeys = storageData.apiKeys || {};
@@ -231,6 +231,11 @@ async function getApiServiceInstance() {
   const apiOddsKey = apiKeys.apiOddsKey || '';
   
   console.log('🔑 Loaded API keys from storage - Football:', !!apiFootballKey, 'Odds:', !!apiOddsKey);
+  
+  // Set verbose diagnostic mode if function is available
+  if (typeof setVerboseDiagnosticMode === 'function') {
+    setVerboseDiagnosticMode(storageData.verboseDiagnosticMode || false);
+  }
   
   return new ApiServiceClass(apiFootballKey, apiOddsKey);
 }
@@ -706,12 +711,222 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
     })();
     return true;
   }
+
+  // Broker: Mark bet as placed (feedback from auto-fill success)
+  if (message.action === 'betPlaced') {
+    const { betId, uid, odds, stake, exchange, timestamp } = message;
+    console.log(`Surebet Helper: 📝 betPlaced confirmation received (ID: ${betId || uid})`);
+    
+    (async () => {
+      try {
+        const result = await new Promise((resolve) => {
+          chrome.storage.local.get(['bets'], resolve);
+        });
+        
+        const bets = result.bets || [];
+        // Find bet by uid (preferred) or id
+        const betIndex = bets.findIndex(b => 
+          (uid && b.uid === uid) || (betId && (b.id === betId || b.uid === betId))
+        );
+        
+        if (betIndex >= 0) {
+          // Add placement confirmation fields (keep status as 'pending' for settlement tracking)
+          bets[betIndex].placedAt = timestamp || new Date().toISOString();
+          bets[betIndex].placedOdds = odds || bets[betIndex].odds;
+          bets[betIndex].placedStake = stake || bets[betIndex].stake;
+          bets[betIndex].placedExchange = exchange || bets[betIndex].bookmaker;
+          bets[betIndex].autoFillSuccess = true;
+          
+          await new Promise((resolve) => {
+            chrome.storage.local.set({ bets }, resolve);
+          });
+          
+          console.log(`Surebet Helper: ✓ Bet ${betId || uid} marked as placed at ${bets[betIndex].placedAt}`);
+          sendResponse({ success: true, betIndex, placedAt: bets[betIndex].placedAt });
+        } else {
+          console.warn(`Surebet Helper: ⚠ betPlaced - Bet not found (ID: ${betId || uid})`);
+          sendResponse({ success: false, error: 'Bet not found' });
+        }
+      } catch (err) {
+        console.error('Surebet Helper: ❌ betPlaced error:', err);
+        sendResponse({ success: false, error: err.message });
+      }
+    })();
+    
+    return true;
+  }
   
   if (message.action === 'checkStorageSize') {
     (async () => {
       const sizeInfo = await getStorageSizeKB();
       sendResponse({ success: true, ...sizeInfo });
     })();
+    return true;
+  }
+  
+  // ========== DIAGNOSTIC TOOLS ==========
+  
+  // Set verbose diagnostic mode
+  if (message.action === 'setVerboseDiagnosticMode') {
+    const enabled = message.enabled || false;
+    console.log('🔬 setVerboseDiagnosticMode:', enabled);
+    
+    // Update the in-memory flag in apiService (if loaded)
+    if (typeof setVerboseDiagnosticMode === 'function') {
+      setVerboseDiagnosticMode(enabled);
+    }
+    
+    // Also persist to storage for reload
+    chrome.storage.local.set({ verboseDiagnosticMode: enabled }, () => {
+      sendResponse({ success: true });
+    });
+    return true;
+  }
+  
+  // Test match event against API fixtures
+  if (message.action === 'testMatchEvent') {
+    console.log('🧪 testMatchEvent action received');
+    
+    (async () => {
+      try {
+        const { eventName, sport, date } = message;
+        
+        if (!eventName || !sport || !date) {
+          sendResponse({ error: 'Missing required parameters (eventName, sport, date)' });
+          return;
+        }
+        
+        // Load ApiService
+        const apiService = await getApiServiceInstance();
+        const config = apiService.isConfigured();
+        
+        if (!config.football && !config.other) {
+          sendResponse({ error: 'No API keys configured. Please set up API keys first.' });
+          return;
+        }
+        
+        // Fetch fixtures for the sport and date
+        const eventDate = new Date(date);
+        console.log(`🧪 Testing match: "${eventName}" (${sport}) on ${date}`);
+        
+        let fixtures = [];
+        try {
+          fixtures = await apiService.fetchSportFixtures(sport, eventDate);
+        } catch (err) {
+          sendResponse({ error: `Failed to fetch fixtures: ${err.message}` });
+          return;
+        }
+        
+        console.log(`🧪 Fetched ${fixtures.length} fixtures for ${sport} on ${date}`);
+        
+        if (fixtures.length === 0) {
+          sendResponse({ 
+            matchFound: false, 
+            error: 'No fixtures found for this sport and date',
+            fixturesCount: 0
+          });
+          return;
+        }
+        
+        // Parse team names from event
+        const betEvent = eventName.toLowerCase().trim();
+        const betTeams = betEvent.split(/\s+(?:vs\.?|v\.?|versus|at|@)\s+/i);
+        
+        if (betTeams.length !== 2) {
+          sendResponse({ 
+            matchFound: false, 
+            error: 'Could not parse team names. Use format "Team A vs Team B"',
+            parseResult: betTeams
+          });
+          return;
+        }
+        
+        const [team1Raw, team2Raw] = betTeams.map(t => t.trim());
+        const team1 = apiService.normalizeTeamName(team1Raw);
+        const team2 = apiService.normalizeTeamName(team2Raw);
+        
+        console.log(`🧪 Searching for: "${team1}" vs "${team2}"`);
+        
+        // Find matches and calculate similarities
+        const candidates = [];
+        
+        for (const fixture of fixtures) {
+          const teams = apiService.extractTeamNames(fixture, sport);
+          if (!teams.home || !teams.away) continue;
+          
+          const homeTeam = apiService.normalizeTeamName(teams.home);
+          const awayTeam = apiService.normalizeTeamName(teams.away);
+          
+          const sim1Home = apiService.stringSimilarity(team1, homeTeam);
+          const sim2Away = apiService.stringSimilarity(team2, awayTeam);
+          const sim1Away = apiService.stringSimilarity(team1, awayTeam);
+          const sim2Home = apiService.stringSimilarity(team2, homeTeam);
+          const score = Math.max(sim1Home + sim2Away, sim1Away + sim2Home) / 2;
+          
+          // Check for exact match
+          const exactMatch = (homeTeam.includes(team1) && awayTeam.includes(team2)) ||
+                            (homeTeam.includes(team2) && awayTeam.includes(team1));
+          
+          candidates.push({
+            home: teams.home,
+            away: teams.away,
+            homeNormalized: homeTeam,
+            awayNormalized: awayTeam,
+            score: score.toFixed(3),
+            sim1Home: sim1Home.toFixed(3),
+            sim2Away: sim2Away.toFixed(3),
+            sim1Away: sim1Away.toFixed(3),
+            sim2Home: sim2Home.toFixed(3),
+            exactMatch,
+            status: apiService.extractGameStatus(fixture, sport),
+            fixture
+          });
+        }
+        
+        // Sort by score
+        candidates.sort((a, b) => parseFloat(b.score) - parseFloat(a.score));
+        
+        // Check if we have a match (exact or fuzzy > 0.65)
+        const bestMatch = candidates[0];
+        const threshold = sport === 'football' ? 0.7 : 0.65;
+        
+        if (bestMatch && (bestMatch.exactMatch || parseFloat(bestMatch.score) >= threshold)) {
+          const scores = apiService.extractScores(bestMatch.fixture, sport);
+          sendResponse({
+            matchFound: true,
+            matchedFixture: `${bestMatch.home} vs ${bestMatch.away}`,
+            matchType: bestMatch.exactMatch ? 'exact' : 'fuzzy',
+            similarity: `${(parseFloat(bestMatch.score) * 100).toFixed(0)}%`,
+            status: bestMatch.status,
+            score: scores ? `${scores.home} - ${scores.away}` : null,
+            searchedTeams: { team1, team2 },
+            fixturesCount: fixtures.length
+          });
+        } else {
+          // No match found - return candidates for debugging
+          sendResponse({
+            matchFound: false,
+            searchedTeams: { team1, team2 },
+            fixturesCount: fixtures.length,
+            threshold,
+            topCandidates: candidates.slice(0, 10).map(c => ({
+              fixture: `${c.home} vs ${c.away}`,
+              score: c.score,
+              sim1Home: c.sim1Home,
+              sim2Away: c.sim2Away,
+              sim1Away: c.sim1Away,
+              sim2Home: c.sim2Home,
+              status: c.status
+            }))
+          });
+        }
+        
+      } catch (err) {
+        console.error('🧪 testMatchEvent error:', err);
+        sendResponse({ error: err.message || 'Unknown error during test' });
+      }
+    })();
+    
     return true;
   }
   
@@ -903,15 +1118,17 @@ async function handleCheckResults() {
       });
 
     return { 
+      success: true,
       results: formatted,
       checked: readyBets.length,
+      settled: formatted.length,
       found: formatted.length,
       unsupported: unsupportedCount,
       rateLimited: rateLimitedCount
     };
   } catch (error) {
     console.error('Check results error:', error);
-    return { error: error.message };
+    return { success: false, error: error.message };
   }
 }
 

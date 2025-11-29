@@ -66,6 +66,26 @@ After loading, check these indicators:
    - Click **🐛 Debug Export → Export Pending Bets (JSON)**
    - The file will download with only bets that are currently pending/unsettled — use this for debugging CSV import parser issues or verifying pending bet structure
 
+   ---
+
+   ### CSV Import - Report Issue Test
+
+   This test validates that the CSV import report feature captures the necessary debug data and opens a pre-filled GitHub issue.
+
+   1. Load the extension and open the Import page (`import.html`).
+   2. Select a CSV file and click **Import Now**.
+   3. When the import completes and the results are shown, click **🐛 Report Match Issue**.
+   4. Confirm the Privacy modal.
+   5. A GitHub issue page should open with a pre-filled summary and a `PASTE_FULL_JSON_HERE` placeholder.
+   6. Confirm your clipboard contains the full JSON debug payload; paste it into the issue body if needed.
+   7. Verify the issue contains a readable table of unmatched entries and a condensed log of match attempts.
+
+   Success Criteria:
+   - The GitHub issue editor opens containing a pre-filled summary and tables
+   - The clipboard contains the full JSON debug payload
+   - The `PASTE_FULL_JSON_HERE` placeholder is present to paste full JSON if body is truncated
+
+
 ---
 
 ### Troubleshooting

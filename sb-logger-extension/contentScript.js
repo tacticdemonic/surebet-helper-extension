@@ -317,6 +317,72 @@ function () {
   let bettingSlipDetector = null;
   let bettingSlipDetectorPolling = null;
 
+  /**
+   * Debug function to test all betting slip selectors for the current exchange
+   * Call from browser console: window.debugBettingSlipSelectors()
+   */
+  function debugBettingSlipSelectors(exchangeOverride) {
+    const exchange = exchangeOverride || getExchangeFromHostname();
+    if (!exchange) {
+      console.log('🔍 Selector Debug: Not on a supported exchange. Supported: betfair, smarkets, matchbook, betdaq');
+      return { error: 'Not on supported exchange' };
+    }
+    
+    console.log(`\n🔍 ========== BETTING SLIP SELECTOR DEBUG (${exchange.toUpperCase()}) ==========`);
+    const selectors = BETTING_SLIP_SELECTORS[exchange];
+    if (!selectors) {
+      console.log(`❌ No selectors defined for ${exchange}`);
+      return { error: `No selectors for ${exchange}` };
+    }
+    
+    const results = { exchange, timestamp: new Date().toISOString(), categories: {} };
+    
+    // Test each selector category
+    for (const [category, selectorList] of Object.entries(selectors)) {
+      const categorySelectors = Array.isArray(selectorList) ? selectorList : [selectorList];
+      console.log(`\n📋 ${category.toUpperCase()}:`);
+      results.categories[category] = [];
+      
+      categorySelectors.forEach((selector, i) => {
+        try {
+          const elem = document.querySelector(selector);
+          const found = !!elem;
+          const status = found ? '✓ FOUND' : '✗ not found';
+          const tagInfo = found ? `<${elem.tagName.toLowerCase()}${elem.id ? ' #' + elem.id : ''}${elem.className ? ' .' + elem.className.split(' ').slice(0, 2).join('.') : ''}>` : '';
+          const valueInfo = found && elem.value !== undefined ? ` value="${elem.value}"` : '';
+          
+          console.log(`  [${i}] ${status}: ${selector}`);
+          if (found) {
+            console.log(`      → ${tagInfo}${valueInfo}`);
+          }
+          
+          results.categories[category].push({ selector, found, element: tagInfo || null });
+        } catch (err) {
+          console.log(`  [${i}] ⚠ ERROR: ${selector} - ${err.message}`);
+          results.categories[category].push({ selector, found: false, error: err.message });
+        }
+      });
+    }
+    
+    // Summary
+    const totalFound = Object.values(results.categories)
+      .flatMap(cat => cat)
+      .filter(r => r.found).length;
+    const totalSelectors = Object.values(results.categories)
+      .flatMap(cat => cat).length;
+    
+    console.log(`\n📊 SUMMARY: ${totalFound}/${totalSelectors} selectors matched`);
+    console.log(`===============================================================\n`);
+    
+    results.summary = { found: totalFound, total: totalSelectors };
+    return results;
+  }
+  
+  // Expose debug function to window for console access
+  if (typeof window !== 'undefined') {
+    window.debugBettingSlipSelectors = debugBettingSlipSelectors;
+  }
+
   function generateBetUid() {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) {
       return crypto.randomUUID();
@@ -2773,6 +2839,43 @@ function () {
     });
   }
 
+  /**
+   * Check if the market appears to be closed or suspended
+   * Looks for common indicators across exchanges that the market is unavailable
+   */
+  function isMarketClosed() {
+    const pageText = document.body?.innerText?.toLowerCase() || '';
+    const closedIndicators = [
+      // Text-based indicators
+      pageText.includes('market closed'),
+      pageText.includes('market suspended'),
+      pageText.includes('betting closed'),
+      pageText.includes('event closed'),
+      pageText.includes('this market is closed'),
+      pageText.includes('suspended'),
+      pageText.includes('not available'),
+      // Element-based indicators
+      !!document.querySelector('[data-testid*="closed" i]'),
+      !!document.querySelector('[data-testid*="suspended" i]'),
+      !!document.querySelector('[aria-label*="closed" i]'),
+      !!document.querySelector('[aria-label*="suspended" i]'),
+      !!document.querySelector('.market-closed'),
+      !!document.querySelector('.market-suspended'),
+      !!document.querySelector('.bet-disabled'),
+      // Smarkets-specific
+      !!document.querySelector('.event-closed'),
+      // Betfair-specific
+      !!document.querySelector('.runner-suspended'),
+      !!document.querySelector('.market-status-suspended')
+    ];
+    
+    const isClosed = closedIndicators.some(indicator => indicator === true);
+    if (isClosed) {
+      console.log('Surebet Helper: Market closure indicators found:', closedIndicators.map((v, i) => v ? i : null).filter(v => v !== null));
+    }
+    return isClosed;
+  }
+
   async function autoFillBetSlip(betData) {
     if (!autoFillSettings.enabled) {
       console.log('Surebet Helper: Auto-fill is disabled');
@@ -2809,6 +2912,14 @@ function () {
       betId: betData.id,
       timeout: autoFillSettings.timeout
     });
+
+    // Check if market is closed/suspended before attempting auto-fill
+    if (isMarketClosed()) {
+      console.warn('Surebet Helper: Market appears to be closed or suspended');
+      debugLogger.log('autoFill', 'Market closed/suspended - skipping auto-fill', { exchange }, 'warn');
+      showToast('❌ Market is closed or suspended', 'error', 3000);
+      return false;
+    }
 
     // Start MutationObserver to detect betting slip
     return new Promise(async (resolve) => {
@@ -2862,6 +2973,31 @@ function () {
             if (success) {
               debugLogger.log('autoFill', 'Stake auto-filled successfully', { stake: betData.stake, currency: betData.currency });
               showToast(`✓ Stake auto-filled: ${betData.currency || '£'}${betData.stake}`, true, 2000);
+              
+              // Send betPlaced confirmation to background to mark bet as placed
+              try {
+                chrome.runtime.sendMessage({
+                  action: 'betPlaced',
+                  betId: betData.id,
+                  uid: betData.uid,
+                  odds: betData.odds,
+                  stake: betData.stake,
+                  exchange: exchange,
+                  timestamp: new Date().toISOString()
+                }, (response) => {
+                  if (chrome.runtime.lastError) {
+                    console.warn('Surebet Helper: ⚠ Failed to send betPlaced confirmation:', chrome.runtime.lastError.message);
+                  } else if (response && response.success) {
+                    console.log(`Surebet Helper: ✓ Bet placement confirmed at ${response.placedAt}`);
+                    debugLogger.log('autoFill', 'Bet placement confirmed', { placedAt: response.placedAt });
+                  } else {
+                    console.warn('Surebet Helper: ⚠ betPlaced response:', response);
+                  }
+                });
+              } catch (err) {
+                console.warn('Surebet Helper: ⚠ Error sending betPlaced confirmation:', err.message);
+              }
+              
               // Attach logs and save bet
               debugLogger.attachToBet(betData);
               updateBetWithDebugLogs(betData);
@@ -2968,10 +3104,11 @@ function () {
       try {
         // 1. BROKER: Query background context for pendingBet (cross-origin safe)
         debugLogger.log('betRetrieval', 'Querying broker for pending bet', {});
+        const brokerStartTime = Date.now();
         const brokerResult = await new Promise((resolve, reject) => {
           const timeout = setTimeout(() => {
             reject(new Error('Broker timeout'));
-          }, 3000);
+          }, 5000);  // Increased from 3000ms to handle service worker cold starts
           
           chrome.runtime.sendMessage(
             { action: 'consumePendingBet' },
@@ -3013,7 +3150,7 @@ function () {
                 resolve(null);
               }
             });
-          }, 100);
+          }, 500);  // Increased from 100ms to handle slower page loads
         });
         
         if (result) {

@@ -230,24 +230,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.44] - 2025-10-30
 
 ### ✨ Features
-- Added Matchbook exchange support for auto-fill
-- Improved betting slip selector robustness
 
 ---
 
 ## [1.0.43] - 2025-10-28
 
-### 🐛 Bug Fixes
-- Fixed Smarkets auto-fill timing issues
-- Improved odds validation for auto-filled bets
-
----
-
 ## [1.0.42] - 2025-10-25
 
-### ✨ Features
-- Added Smarkets auto-fill support
-- Improved stake input detection
 
 ---
 

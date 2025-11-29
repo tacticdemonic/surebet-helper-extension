@@ -395,6 +395,28 @@ async function getAllRateLimitStats() {
 
 // ========== DIAGNOSTIC LOGGING ==========
 const MAX_DIAGNOSTIC_ENTRIES = 500;
+const MAX_VERBOSE_ENTRIES = 50; // Keep fewer verbose entries due to size
+
+// Verbose mode stores full API responses and fixture data for debugging
+let verboseDiagnosticMode = false;
+
+/**
+ * Enable/disable verbose diagnostic mode
+ * When enabled, stores full fixture data for match failures
+ * @param {boolean} enabled - Whether to enable verbose mode
+ */
+function setVerboseDiagnosticMode(enabled) {
+  verboseDiagnosticMode = !!enabled;
+  console.log(`🔍 Verbose diagnostic mode: ${verboseDiagnosticMode ? 'ENABLED' : 'DISABLED'}`);
+}
+
+/**
+ * Get current verbose diagnostic mode state
+ * @returns {boolean}
+ */
+function getVerboseDiagnosticMode() {
+  return verboseDiagnosticMode;
+}
 
 /**
  * Log diagnostic entry to storage for later analysis
@@ -677,13 +699,34 @@ class ApiService {
 
   // Match bet event to API fixture
   matchFootballEvent(bet, fixtures) {
-    console.log('🔍 Matching event:', bet.event);
+    console.log('🔍 Matching football event:', bet.event);
     const betEvent = bet.event.toLowerCase().trim();
     // Split on 'vs', 'v', 'at', or 'versus' with surrounding spaces
     const betTeams = betEvent.split(/\s+(?:vs\.?|v\.?|versus|at)\s+/i);
     
     if (betTeams.length !== 2) {
       console.warn('⚠️ Could not parse team names from:', bet.event);
+      
+      // Log parse failure for diagnostics
+      logApiDiagnostics({
+        type: 'match_failure',
+        sport: 'football',
+        reason: 'Could not parse team names from event string',
+        bet: { 
+          id: bet.id,
+          event: bet.event, 
+          tournament: bet.tournament, 
+          sport: bet.sport, 
+          eventTime: bet.eventTime,
+          market: bet.market
+        },
+        parseAttempt: {
+          input: bet.event,
+          splitResult: betTeams,
+          splitPattern: '/\\s+(?:vs\\.?|v\\.?|versus|at)\\s+/i'
+        }
+      });
+      
       return null;
     }
 
@@ -692,27 +735,117 @@ class ApiService {
     const team2 = this.normalizeTeamName(team2Raw);
     console.log('🔍 Looking for:', team1, 'vs', team2);
 
+    // Track candidates for diagnostic logging
+    const candidates = [];
+
     for (const fixture of fixtures) {
       const homeTeam = this.normalizeTeamName(fixture.teams.home.name);
       const awayTeam = this.normalizeTeamName(fixture.teams.away.name);
 
+      // Calculate all similarity scores for this fixture
+      const sim1Home = this.stringSimilarity(team1, homeTeam);
+      const sim2Away = this.stringSimilarity(team2, awayTeam);
+      const sim1Away = this.stringSimilarity(team1, awayTeam);
+      const sim2Home = this.stringSimilarity(team2, homeTeam);
+      const score = Math.max(sim1Home + sim2Away, sim1Away + sim2Home) / 2;
+      
+      // Track candidate
+      candidates.push({
+        home: fixture.teams.home.name,
+        away: fixture.teams.away.name,
+        homeNormalized: homeTeam,
+        awayNormalized: awayTeam,
+        score: score.toFixed(3),
+        sim1Home: sim1Home.toFixed(3),
+        sim2Away: sim2Away.toFixed(3),
+        sim1Away: sim1Away.toFixed(3),
+        sim2Home: sim2Home.toFixed(3),
+        fixture
+      });
+
       // Try exact match first
       if (homeTeam.includes(team1) && awayTeam.includes(team2)) {
         console.log('✅ Exact match found:', fixture.teams.home.name, 'vs', fixture.teams.away.name);
+        
+        logApiDiagnostics({
+          type: 'match_success',
+          sport: 'football',
+          betEvent: bet.event,
+          matchedFixture: `${fixture.teams.home.name} vs ${fixture.teams.away.name}`,
+          matchType: 'exact',
+          searchedTeams: { team1, team2 }
+        });
+        
         return fixture;
       }
 
-      // Try fuzzy match (contains)
-      const similarity1 = this.stringSimilarity(team1, homeTeam);
-      const similarity2 = this.stringSimilarity(team2, awayTeam);
-
-      if (similarity1 > 0.7 && similarity2 > 0.7) {
-        console.log('✅ Fuzzy match found:', fixture.teams.home.name, 'vs', fixture.teams.away.name, `(${(similarity1*100).toFixed(0)}%, ${(similarity2*100).toFixed(0)}%)`);
+      // Try fuzzy match
+      if (sim1Home > 0.7 && sim2Away > 0.7) {
+        console.log('✅ Fuzzy match found:', fixture.teams.home.name, 'vs', fixture.teams.away.name, `(${(sim1Home*100).toFixed(0)}%, ${(sim2Away*100).toFixed(0)}%)`);
+        
+        logApiDiagnostics({
+          type: 'match_success',
+          sport: 'football',
+          betEvent: bet.event,
+          matchedFixture: `${fixture.teams.home.name} vs ${fixture.teams.away.name}`,
+          matchType: 'fuzzy',
+          similarity: `${(score * 100).toFixed(0)}%`,
+          searchedTeams: { team1, team2 }
+        });
+        
         return fixture;
       }
     }
 
     console.warn('❌ No match found for:', bet.event);
+    
+    // Sort candidates by score and log detailed failure
+    candidates.sort((a, b) => parseFloat(b.score) - parseFloat(a.score));
+    
+    const failureEntry = {
+      type: 'match_failure',
+      sport: 'football',
+      reason: 'No suitable match found',
+      bet: { 
+        id: bet.id,
+        event: bet.event, 
+        tournament: bet.tournament, 
+        sport: bet.sport, 
+        eventTime: bet.eventTime,
+        market: bet.market,
+        odds: bet.odds
+      },
+      searchedTeams: {
+        team1: { raw: team1Raw, normalized: team1 },
+        team2: { raw: team2Raw, normalized: team2 }
+      },
+      topCandidates: candidates.slice(0, 10).map(c => ({
+        fixture: `${c.home} vs ${c.away}`,
+        homeNormalized: c.homeNormalized,
+        awayNormalized: c.awayNormalized,
+        score: c.score,
+        sim1Home: c.sim1Home,
+        sim2Away: c.sim2Away,
+        sim1Away: c.sim1Away,
+        sim2Home: c.sim2Home
+      })),
+      totalFixturesSearched: fixtures.length,
+      matchThreshold: 0.7
+    };
+    
+    // In verbose mode, store more fixture data
+    if (verboseDiagnosticMode) {
+      failureEntry.verboseData = {
+        allFixtureTeams: fixtures.slice(0, 30).map(f => ({
+          home: f.teams.home.name,
+          away: f.teams.away.name,
+          status: f.fixture?.status?.short
+        }))
+      };
+    }
+    
+    logApiDiagnostics(failureEntry);
+    
     return null;
   }
 
@@ -1113,16 +1246,54 @@ class ApiService {
     
     // Log failure with top candidates for analysis
     candidates.sort((a, b) => parseFloat(b.score) - parseFloat(a.score));
-    logApiDiagnostics({
+    
+    // Build detailed failure entry
+    const failureEntry = {
       type: 'match_failure',
       sport,
       reason: 'No suitable match found',
-      bet: { event: bet.event, tournament: bet.tournament, sport: bet.sport, eventTime: bet.eventTime },
-      topCandidates: candidates.slice(0, 5).map(c => ({
+      bet: { 
+        id: bet.id,
+        event: bet.event, 
+        tournament: bet.tournament, 
+        sport: bet.sport, 
+        eventTime: bet.eventTime,
+        market: bet.market,
+        odds: bet.odds
+      },
+      searchedTeams: {
+        team1: { raw: team1Raw, normalized: team1 },
+        team2: { raw: team2Raw, normalized: team2 }
+      },
+      topCandidates: candidates.slice(0, 10).map(c => ({
         fixture: `${c.home} vs ${c.away}`,
-        score: c.score
-      }))
-    });
+        homeNormalized: this.normalizeTeamName(c.home),
+        awayNormalized: this.normalizeTeamName(c.away),
+        score: c.score,
+        sim1Home: this.stringSimilarity(team1, this.normalizeTeamName(c.home)).toFixed(3),
+        sim2Away: this.stringSimilarity(team2, this.normalizeTeamName(c.away)).toFixed(3),
+        sim1Away: this.stringSimilarity(team1, this.normalizeTeamName(c.away)).toFixed(3),
+        sim2Home: this.stringSimilarity(team2, this.normalizeTeamName(c.home)).toFixed(3)
+      })),
+      totalFixturesSearched: fixtures.length,
+      matchThreshold: 0.65
+    };
+    
+    // In verbose mode, also store sample fixtures for debugging
+    if (verboseDiagnosticMode) {
+      failureEntry.verboseData = {
+        allFixtureTeams: fixtures.slice(0, 30).map(f => {
+          const teams = this.extractTeamNames(f, sport);
+          return {
+            home: teams.home,
+            away: teams.away,
+            status: this.extractGameStatus(f, sport)
+          };
+        })
+      };
+    }
+    
+    logApiDiagnostics(failureEntry);
     
     return null;
   }
@@ -1671,6 +1842,9 @@ if (typeof self !== 'undefined') {
   self.getDiagnosticLog = getDiagnosticLog;
   self.clearDiagnosticLog = clearDiagnosticLog;
   self.logApiDiagnostics = logApiDiagnostics;
+  // Verbose diagnostic mode controls
+  self.setVerboseDiagnosticMode = setVerboseDiagnosticMode;
+  self.getVerboseDiagnosticMode = getVerboseDiagnosticMode;
   console.log('✅ ApiService class and multi-sport utilities loaded');
 }
 
@@ -1685,6 +1859,8 @@ if (typeof module !== 'undefined' && module.exports) {
     getAllRateLimitStats,
     getDiagnosticLog,
     clearDiagnosticLog,
-    logApiDiagnostics
+    logApiDiagnostics,
+    setVerboseDiagnosticMode,
+    getVerboseDiagnosticMode
   };
 }

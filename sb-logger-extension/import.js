@@ -1,5 +1,28 @@
 // Import page script - handles CSV and JSON file import from dedicated page
-console.log('📥 Import page loaded v2.3 - Improved team name normalization for Crvena Zvezda/Red Star Belgrade etc.');
+// Browser compatibility polyfill (Firefox uses 'browser', Chrome uses 'chrome')
+const browser = typeof window !== 'undefined' && window.browser ? window.browser : 
+               (typeof chrome !== 'undefined' ? chrome : null);
+
+if (!browser) {
+  console.error('❌ Browser API not available - import will not work');
+}
+
+const IMPORT_VERSION = '2.6';
+const EXTENSION_VERSION = '1.0.90';
+const GITHUB_REPO = 'tacticdemonic/surebet-helper-extension';
+
+// Debug data capture for issue reporting
+let lastImportDebug = {
+  timestamp: null,
+  csvFormat: null,
+  csvEntries: [],        // Raw CSV entries
+  pendingBets: [],       // Pending bets at time of import
+  matchAttempts: [],     // Detailed match attempts with scores
+  matchedCount: 0,
+  unmatchedCount: 0
+};
+
+console.log(`📥 Import page loaded v${IMPORT_VERSION} - Debug issue reporting enabled`);
 
 const fileInput = document.getElementById('csv-file-input');
 const selectedFilesDiv = document.getElementById('selected-files');
@@ -613,22 +636,68 @@ async function processImportedJSON(jsonText, filename) {
 
 async function processImportedData(plData, source) {
   console.log(`🔍 Processing ${plData.length} P/L entries from ${source}`);
+  console.log(`📋 P/L entries to process:`, plData.map(e => `${e.event} | ${e.market} | ${e.profitLoss}`));
+  
+  // Reset debug data for this import session
+  lastImportDebug = {
+    timestamp: new Date().toISOString(),
+    csvFormat: detectCSVFormat(source),
+    csvEntries: plData.map(e => ({
+      event: e.event,
+      market: e.market,
+      sport: e.sport,
+      profitLoss: e.profitLoss,
+      isVoided: e.isVoided || false
+    })),
+    pendingBets: [],
+    matchAttempts: [],
+    matchedCount: 0,
+    unmatchedCount: 0
+  };
   
   // Get all pending bets from storage
-  const result = await browser.storage.local.get('bets');
+  console.log('🔍 Attempting to read bets from storage...');
+  console.log('🔍 Browser API available:', !!browser);
+  console.log('🔍 Browser storage available:', !!(browser && browser.storage));
+  
+  let result;
+  try {
+    result = await browser.storage.local.get('bets');
+    console.log('🔍 Storage read successful, result:', result);
+    console.log('🔍 Result has bets key:', 'bets' in result);
+    console.log('🔍 Bets array length:', result.bets ? result.bets.length : 'undefined/null');
+  } catch (err) {
+    console.error('❌ Storage read failed:', err);
+    result = { bets: [] };
+  }
+  
   const allBets = result.bets || [];
   const pendingBets = allBets.filter(bet => bet.status === 'pending');
   
+  // Capture pending bets for debug
+  lastImportDebug.pendingBets = pendingBets.map(b => ({
+    event: b.event,
+    market: b.market,
+    sport: b.sport,
+    bookmaker: b.bookmaker,
+    stake: b.stake,
+    odds: b.odds
+  }));
+  
   console.log(`📊 Found ${pendingBets.length} pending bets to match against ${plData.length} P/L entries`);
+  console.log(`📋 Pending bets:`, pendingBets.map(b => `${b.event} | ${b.market} | ${b.bookmaker} | status=${b.status}`));
   
   let matchedCount = 0;
   let updatedBets = [...allBets];
   
   for (const plEntry of plData) {
-    const match = matchBetWithPL(plEntry, updatedBets);
+    const matchResult = matchBetWithPLDebug(plEntry, updatedBets);
     
-    if (match) {
-      const betIndex = updatedBets.findIndex(b => b.id === match.id);
+    // Capture match attempt for debug
+    lastImportDebug.matchAttempts.push(matchResult.debugInfo);
+    
+    if (matchResult.match) {
+      const betIndex = updatedBets.findIndex(b => b.id === matchResult.match.id);
       if (betIndex !== -1) {
         // Check if bet was voided
         let newStatus;
@@ -640,12 +709,16 @@ async function processImportedData(plData, source) {
         updatedBets[betIndex].status = newStatus;
         updatedBets[betIndex].actualPL = plEntry.profitLoss;
         matchedCount++;
-        console.log(`✅ Matched: ${match.event} - ${newStatus} (${plEntry.profitLoss})`);
+        console.log(`✅ Matched: ${matchResult.match.event} - ${newStatus} (${plEntry.profitLoss})`);
       }
     } else {
       console.log(`❌ No match found for: "${plEntry.event}" - "${plEntry.market}"`);
     }
   }
+  
+  // Update debug stats
+  lastImportDebug.matchedCount = matchedCount;
+  lastImportDebug.unmatchedCount = plData.length - matchedCount;
   
   // Debug: Show what pending bets we have
   console.log(`\n📋 Current pending bets:`);
@@ -662,6 +735,7 @@ async function processImportedData(plData, source) {
   }
   
   console.log(`✅ Import complete: ${matchedCount} bets updated`);
+  console.log(`🐛 Debug data captured:`, lastImportDebug);
   
   showResults(
     'success',
@@ -669,9 +743,26 @@ async function processImportedData(plData, source) {
     `<strong>${matchedCount}</strong> bet(s) matched and updated<br>` +
     `${plData.length - matchedCount} entries had no matching bet`
   );
+  
+  // Show report issue button
+  showReportIssueButton();
+}
+
+// Detect CSV format from filename/source
+function detectCSVFormat(source) {
+  const sourceLower = source.toLowerCase();
+  if (sourceLower.includes('smarkets')) return 'Smarkets';
+  if (sourceLower.includes('betfair')) return 'Betfair';
+  if (sourceLower.includes('exchange')) return 'Betfair Exchange';
+  return 'Unknown';
 }
 
 function matchBetWithPL(plEntry, allBets) {
+  return matchBetWithPLDebug(plEntry, allBets).match;
+}
+
+// Enhanced matching function that returns debug info
+function matchBetWithPLDebug(plEntry, allBets) {
   const normalizeString = (str) => {
     return str.toLowerCase()
       // Normalize team name translations/localizations (Serbian, German, etc.)
@@ -750,8 +841,10 @@ function matchBetWithPL(plEntry, allBets) {
         // Keep important content from parentheses, strip "back" and "lay" labels
         return ' ' + content.replace(/\b(back|lay)\b/gi, '').trim() + ' ';
       })
-      // Remove everything after first slash (player names in handicaps)
-      .replace(/\/.*$/, '')
+      // Smarkets handicap format: "Team +0.5 / Team -0.5" - detect and normalize BEFORE removing slashes
+      .replace(/[\+\-]?\d+\.?\d*\s*\/\s*[\+\-]?\d+\.?\d*/g, '_HANDICAP_')
+      // Remove everything after first slash ONLY if not already processed as handicap
+      .replace(/\s+\/\s+[^_].*$/g, '')
       // Remove "participant" keyword before player names
       .replace(/\bparticipant\b/g, '')
       // Remove "Regular time" prefix from Smarkets markets
@@ -852,6 +945,21 @@ function matchBetWithPL(plEntry, allBets) {
   const plMarket = normalizeMarket(plEntry.market, plEntry.event);
   const plSport = normalizeString(plEntry.sport);
   
+  // Debug info object to capture match attempts
+  const debugInfo = {
+    csvEntry: {
+      event: plEntry.event,
+      eventNormalized: plEvent,
+      market: plEntry.market,
+      marketNormalized: plMarket,
+      profitLoss: plEntry.profitLoss
+    },
+    candidates: [],
+    matched: false,
+    matchedBet: null,
+    matchReason: null
+  };
+  
   console.log(`\n  📍 Checking CSV: "${plEntry.event}"`);
   console.log(`     Normalized: "${plEvent}"`);
   
@@ -870,9 +978,11 @@ function matchBetWithPL(plEntry, allBets) {
     
     // Check event match - allow some flexibility
     let eventMatches = false;
+    let eventMatchRatio = 0;
     
     if (plEvent === betEvent) {
       eventMatches = true;
+      eventMatchRatio = 1.0;
     } else {
       // Check if events are very similar (e.g., reordered teams or partial names)
       const plEventTokens = plEvent.split(/\s+/).filter(t => t.length > 2);
@@ -881,10 +991,10 @@ function matchBetWithPL(plEntry, allBets) {
       
       // If most tokens match, consider it an event match
       // Lower threshold to 60% to catch partial team names like "Wild Wings" vs "Schwenninger Wild Wings"
-      const matchRatio = commonTokens.length / Math.min(plEventTokens.length, betEventTokens.length);
-      if (matchRatio >= 0.6 && commonTokens.length >= 2) {
+      eventMatchRatio = commonTokens.length / Math.min(plEventTokens.length, betEventTokens.length);
+      if (eventMatchRatio >= 0.6 && commonTokens.length >= 2) {
         eventMatches = true;
-        console.log(`🔄 Fuzzy event match (${Math.round(matchRatio * 100)}%): "${plEntry.event}" ≈ "${bet.event}"`);
+        console.log(`🔄 Fuzzy event match (${Math.round(eventMatchRatio * 100)}%): "${plEntry.event}" ≈ "${bet.event}"`);
       }
     }
     
@@ -897,30 +1007,61 @@ function matchBetWithPL(plEntry, allBets) {
     console.log(`   CSV market: "${plEntry.market}" → normalized: "${plMarket}"`);
     console.log(`   Saved market: "${bet.market}" → normalized: "${betMarket}"`);
     
-    // Check market match - exact or fuzzy
-    if (plMarket === betMarket) {
-      console.log(`✅ Exact match!`);
-      return bet;
-    }
+    // Calculate all similarity scores
+    const levenSimilarity = 1 - (levenshteinDistance(plMarket, betMarket) / Math.max(plMarket.length, betMarket.length));
     
-    // Fuzzy match - check if markets share key components
-    // Since events match, we're more confident about fuzzy market matching
-    const similarity = 1 - (levenshteinDistance(plMarket, betMarket) / Math.max(plMarket.length, betMarket.length));
-    console.log(`   Similarity: ${Math.round(similarity * 100)}%`);
-    
-    // More lenient threshold - if events match, accept 50%+ similarity
-    if (similarity >= 0.5) {
-      console.log(`✅ Fuzzy match accepted!`);
-      return bet;
-    }
-    
-    // Even more lenient: check if key tokens overlap
-    // Split on both spaces and underscores to get all meaningful tokens
     const plTokens = new Set(plMarket.split(/[\s_]+/).filter(t => t.length > 1 && t !== 'NUMS'));
     const betTokens = new Set(betMarket.split(/[\s_]+/).filter(t => t.length > 1 && t !== 'NUMS'));
     const intersection = new Set([...plTokens].filter(t => betTokens.has(t)));
     const union = new Set([...plTokens, ...betTokens]);
     const tokenSimilarity = intersection.size / union.size;
+    
+    const marketTypes = ['MATCHWIN', 'DOUBLECHANCE', 'DNB', 'HANDICAP', 'OVERUNDER', 'LAY', 'H1', 'H2', 'Q1', 'Q2', 'Q3', 'Q4', 'ODD', 'EVEN'];
+    const sharedMarketType = marketTypes.filter(mt => plTokens.has(mt) && betTokens.has(mt));
+    
+    const plNums = new Set([...plTokens].filter(t => /^[\-\d_]+$/.test(t) && t.length > 0));
+    const betNums = new Set([...betTokens].filter(t => /^[\-\d_]+$/.test(t) && t.length > 0));
+    const sharedNums = [...plNums].filter(n => betNums.has(n));
+    
+    // Add candidate to debug info
+    const candidate = {
+      bet: { event: bet.event, market: bet.market, bookmaker: bet.bookmaker },
+      betNormalized: { event: betEvent, market: betMarket },
+      eventMatchRatio: Math.round(eventMatchRatio * 100),
+      levenshteinSimilarity: Math.round(levenSimilarity * 100),
+      tokenSimilarity: Math.round(tokenSimilarity * 100),
+      commonTokens: Array.from(intersection),
+      sharedMarketTypes: sharedMarketType,
+      sharedNumbers: sharedNums,
+      matched: false,
+      matchReason: null
+    };
+    
+    // Check market match - exact or fuzzy
+    if (plMarket === betMarket) {
+      console.log(`✅ Exact match!`);
+      candidate.matched = true;
+      candidate.matchReason = 'exact_match';
+      debugInfo.candidates.push(candidate);
+      debugInfo.matched = true;
+      debugInfo.matchedBet = bet;
+      debugInfo.matchReason = 'exact_match';
+      return { match: bet, debugInfo };
+    }
+    
+    console.log(`   Similarity: ${Math.round(levenSimilarity * 100)}%`);
+    
+    // More lenient threshold - if events match, accept 50%+ similarity
+    if (levenSimilarity >= 0.5) {
+      console.log(`✅ Fuzzy match accepted!`);
+      candidate.matched = true;
+      candidate.matchReason = 'levenshtein_50pct';
+      debugInfo.candidates.push(candidate);
+      debugInfo.matched = true;
+      debugInfo.matchedBet = bet;
+      debugInfo.matchReason = 'levenshtein_50pct';
+      return { match: bet, debugInfo };
+    }
     
     console.log(`   Token overlap: ${Math.round(tokenSimilarity * 100)}% (${intersection.size}/${union.size} tokens)`);
     console.log(`   Common tokens: [${Array.from(intersection).join(', ')}]`);
@@ -928,34 +1069,38 @@ function matchBetWithPL(plEntry, allBets) {
     // Lower threshold to 30% for token overlap
     if (tokenSimilarity >= 0.3) {
       console.log(`✅ Token match accepted!`);
-      return bet;
+      candidate.matched = true;
+      candidate.matchReason = 'token_overlap_30pct';
+      debugInfo.candidates.push(candidate);
+      debugInfo.matched = true;
+      debugInfo.matchedBet = bet;
+      debugInfo.matchReason = 'token_overlap_30pct';
+      return { match: bet, debugInfo };
     }
     
-    // Special case: If both have key market identifiers (MATCHWIN, DOUBLECHANCE, DNB, HANDICAP, OVERUNDER)
-    // and numbers match, accept even with lower token overlap
-    const marketTypes = ['MATCHWIN', 'DOUBLECHANCE', 'DNB', 'HANDICAP', 'OVERUNDER', 'LAY', 'H1', 'H2', 'Q1', 'Q2', 'Q3', 'Q4', 'ODD', 'EVEN'];
-    const plHasMarketType = marketTypes.some(mt => plTokens.has(mt));
-    const betHasMarketType = marketTypes.some(mt => betTokens.has(mt));
-    const sharedMarketType = marketTypes.filter(mt => plTokens.has(mt) && betTokens.has(mt));
-    
+    // Special case: If both have key market identifiers and numbers match
     if (sharedMarketType.length > 0) {
-      // Extract numbers from both
-      const plNums = new Set([...plTokens].filter(t => /^[\-\d_]+$/.test(t) && t.length > 0));
-      const betNums = new Set([...betTokens].filter(t => /^[\-\d_]+$/.test(t) && t.length > 0));
-      const sharedNums = [...plNums].filter(n => betNums.has(n));
-      
       console.log(`   Shared market types: [${sharedMarketType.join(', ')}]`);
       console.log(`   Shared numbers: [${sharedNums.join(', ')}]`);
       
       // If same market type and numbers match (or no numbers in saved bet), accept
       if (sharedMarketType.length > 0 && (sharedNums.length > 0 || plNums.size === 0)) {
         console.log(`✅ Market type + numbers match accepted!`);
-        return bet;
+        candidate.matched = true;
+        candidate.matchReason = 'market_type_numbers';
+        debugInfo.candidates.push(candidate);
+        debugInfo.matched = true;
+        debugInfo.matchedBet = bet;
+        debugInfo.matchReason = 'market_type_numbers';
+        return { match: bet, debugInfo };
       }
     }
+    
+    // No match - record candidate anyway for debug
+    debugInfo.candidates.push(candidate);
   }
   
-  return null;
+  return { match: null, debugInfo };
 }
 
 function levenshteinDistance(str1, str2) {
@@ -1002,5 +1147,277 @@ function showResults(type, message) {
   selectedFilesDiv.style.display = 'none';
   fileInput.value = '';
   selectedFiles = [];
+}
+
+// ============================================================================
+// Report Issue Feature - GitHub Issue with Debug Data
+// ============================================================================
+
+// Show the report issue button after import
+function showReportIssueButton() {
+  const container = document.getElementById('report-issue-container');
+  if (container) {
+    container.style.display = 'block';
+  }
+}
+
+// Initialize report issue button handlers
+document.addEventListener('DOMContentLoaded', () => {
+  const reportBtn = document.getElementById('report-issue-btn');
+  const privacyModal = document.getElementById('privacy-modal');
+  const modalCancel = document.getElementById('modal-cancel');
+  const modalConfirm = document.getElementById('modal-confirm');
+  
+  if (reportBtn) {
+    reportBtn.addEventListener('click', () => {
+      // Show privacy warning modal
+      if (privacyModal) {
+        privacyModal.classList.add('active');
+      }
+    });
+  }
+  
+  if (modalCancel) {
+    modalCancel.addEventListener('click', () => {
+      privacyModal.classList.remove('active');
+    });
+  }
+  
+  if (modalConfirm) {
+    modalConfirm.addEventListener('click', () => {
+      privacyModal.classList.remove('active');
+      openGitHubIssue();
+    });
+  }
+  
+  // Close modal on overlay click
+  if (privacyModal) {
+    privacyModal.addEventListener('click', (e) => {
+      if (e.target === privacyModal) {
+        privacyModal.classList.remove('active');
+      }
+    });
+  }
+});
+
+// Build the debug report markdown
+function buildDebugReport() {
+  const debug = lastImportDebug;
+  
+  // Get unmatched entries only
+  const unmatchedAttempts = debug.matchAttempts.filter(a => !a.matched);
+  
+  // Truncate for URL (max 10 entries each)
+  const maxEntries = 10;
+  const truncatedUnmatched = unmatchedAttempts.slice(0, maxEntries);
+  const truncatedPending = debug.pendingBets.slice(0, maxEntries);
+  
+  let report = `## CSV Import Match Failure Report\n\n`;
+  report += `**Extension Version:** ${EXTENSION_VERSION}\n`;
+  report += `**Import Version:** ${IMPORT_VERSION}\n`;
+  report += `**CSV Format Detected:** ${debug.csvFormat || 'Unknown'}\n`;
+  report += `**Timestamp:** ${debug.timestamp}\n\n`;
+  
+  report += `### Summary\n`;
+  report += `- **Matched:** ${debug.matchedCount}\n`;
+  report += `- **Unmatched:** ${debug.unmatchedCount}\n`;
+  report += `- **Total CSV Entries:** ${debug.csvEntries.length}\n`;
+  report += `- **Pending Bets Available:** ${debug.pendingBets.length}\n\n`;
+  
+  // Unmatched CSV Entries
+  report += `### Unmatched CSV Entries`;
+  if (unmatchedAttempts.length > maxEntries) {
+    report += ` (showing ${maxEntries} of ${unmatchedAttempts.length})`;
+  }
+  report += `\n\n`;
+  
+  if (truncatedUnmatched.length === 0) {
+    report += `_All entries matched successfully!_\n\n`;
+  } else {
+    report += `| Event | Market | P/L |\n`;
+    report += `|-------|--------|-----|\n`;
+    for (const attempt of truncatedUnmatched) {
+      const csv = attempt.csvEntry;
+      report += `| ${escapeMarkdown(csv.event)} | ${escapeMarkdown(csv.market)} | ${csv.profitLoss} |\n`;
+    }
+    report += `\n`;
+  }
+  
+  // Pending Bets
+  report += `### Pending Bets Available`;
+  if (debug.pendingBets.length > maxEntries) {
+    report += ` (showing ${maxEntries} of ${debug.pendingBets.length})`;
+  }
+  report += `\n\n`;
+  
+  if (truncatedPending.length === 0) {
+    report += `_No pending bets in storage_\n\n`;
+  } else {
+    report += `| Event | Market | Bookmaker |\n`;
+    report += `|-------|--------|----------|\n`;
+    for (const bet of truncatedPending) {
+      report += `| ${escapeMarkdown(bet.event)} | ${escapeMarkdown(bet.market)} | ${escapeMarkdown(bet.bookmaker)} |\n`;
+    }
+    report += `\n`;
+  }
+  
+  // Normalization Examples (first unmatched)
+  if (truncatedUnmatched.length > 0) {
+    report += `### Normalization Debug (First Unmatched)\n\n`;
+    const first = truncatedUnmatched[0];
+    report += `**CSV Entry:**\n`;
+    report += `- Raw Event: \`${first.csvEntry.event}\`\n`;
+    report += `- Normalized: \`${first.csvEntry.eventNormalized}\`\n`;
+    report += `- Raw Market: \`${first.csvEntry.market}\`\n`;
+    report += `- Normalized: \`${first.csvEntry.marketNormalized}\`\n\n`;
+    
+    if (first.candidates && first.candidates.length > 0) {
+      report += `**Best Candidate:**\n`;
+      const best = first.candidates[0];
+      report += `- Event: \`${best.bet.event}\` → \`${best.betNormalized.event}\`\n`;
+      report += `- Market: \`${best.bet.market}\` → \`${best.betNormalized.market}\`\n`;
+      report += `- Event Match: ${best.eventMatchRatio}%\n`;
+      report += `- Levenshtein: ${best.levenshteinSimilarity}%\n`;
+      report += `- Token Overlap: ${best.tokenSimilarity}%\n`;
+      report += `- Common Tokens: [${best.commonTokens.join(', ')}]\n`;
+      report += `- Shared Market Types: [${best.sharedMarketTypes.join(', ')}]\n\n`;
+    }
+  }
+  
+  // Detailed Match Attempt Log (console-style)
+  report += `### Match Attempt Log\n\n`;
+  report += `<details>\n<summary>Click to expand detailed matching log (first 5 unmatched)</summary>\n\n`;
+  report += `\`\`\`\n`;
+  
+  const logEntries = truncatedUnmatched.slice(0, 5);
+  for (const attempt of logEntries) {
+    const csv = attempt.csvEntry;
+    report += `📍 CSV Entry: "${csv.event}"\n`;
+    report += `   Normalized Event: "${csv.eventNormalized}"\n`;
+    report += `   Market: "${csv.market}"\n`;
+    report += `   Normalized Market: "${csv.marketNormalized}"\n`;
+    report += `   P/L: ${csv.profitLoss}\n\n`;
+    
+    if (attempt.candidates && attempt.candidates.length > 0) {
+      report += `   Candidates checked:\n`;
+      for (const cand of attempt.candidates.slice(0, 3)) {
+        const eventMatch = cand.eventMatchRatio >= 60 ? '✅' : '❌';
+        report += `   ${eventMatch} "${cand.bet.event}" → "${cand.betNormalized.event}"\n`;
+        report += `      Market: "${cand.bet.market}" → "${cand.betNormalized.market}"\n`;
+        report += `      Event Match: ${cand.eventMatchRatio}% | Levenshtein: ${cand.levenshteinSimilarity}% | Token: ${cand.tokenSimilarity}%\n`;
+        report += `      Common tokens: [${cand.commonTokens.join(', ')}]\n`;
+        report += `      Shared types: [${cand.sharedMarketTypes.join(', ')}] | Numbers: [${cand.sharedNumbers.join(', ')}]\n\n`;
+      }
+    } else {
+      report += `   No event matches found among pending bets\n\n`;
+    }
+    report += `---\n`;
+  }
+  
+  report += `\`\`\`\n\n`;
+  report += `</details>\n\n`;
+  
+  // Full JSON placeholder
+  report += `### Full Debug JSON\n\n`;
+  report += `<details>\n<summary>Click to expand (paste from clipboard if truncated)</summary>\n\n`;
+  report += `\`\`\`json\n`;
+  report += `PASTE_FULL_JSON_HERE\n`;
+  report += `\`\`\`\n\n`;
+  report += `</details>\n`;
+  
+  return report;
+}
+
+// Escape special markdown characters
+function escapeMarkdown(str) {
+  if (!str) return '';
+  return str
+    .replace(/\|/g, '\\|')
+    .replace(/\n/g, ' ')
+    .substring(0, 100); // Truncate long strings
+}
+
+// Show toast notification
+function showToast(message, duration = 4000) {
+  const toast = document.getElementById('toast');
+  if (toast) {
+    toast.textContent = message;
+    toast.classList.add('show');
+    setTimeout(() => {
+      toast.classList.remove('show');
+    }, duration);
+  }
+}
+
+// Copy to clipboard
+async function copyToClipboard(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (err) {
+    console.error('Failed to copy to clipboard:', err);
+    // Fallback for older browsers
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+      return true;
+    } catch (e) {
+      document.body.removeChild(textarea);
+      return false;
+    }
+  }
+}
+
+// Open GitHub issue with debug data
+async function openGitHubIssue() {
+  console.log('🐛 Building debug report for GitHub issue...');
+  
+  // Build the full debug JSON
+  const fullDebugJson = JSON.stringify(lastImportDebug, null, 2);
+  
+  // Copy full JSON to clipboard first
+  const copied = await copyToClipboard(fullDebugJson);
+  if (copied) {
+    showToast('📋 Full debug data copied to clipboard - paste into issue if needed', 5000);
+  }
+  
+  // Build markdown report
+  const report = buildDebugReport();
+  
+  // Build issue title
+  const title = `CSV Import: ${lastImportDebug.unmatchedCount} unmatched entries (${lastImportDebug.csvFormat || 'Unknown'} format)`;
+  
+  // Build issue URL
+  const baseUrl = `https://github.com/${GITHUB_REPO}/issues/new`;
+  const params = new URLSearchParams({
+    title: title,
+    body: report,
+    labels: 'bug,csv-import'
+  });
+  
+  const fullUrl = `${baseUrl}?${params.toString()}`;
+  
+  // Check URL length - GitHub has ~8KB limit
+  if (fullUrl.length > 8000) {
+    console.warn('⚠️ URL too long, opening with truncated body');
+    // Create truncated version
+    const truncatedReport = report.substring(0, 6000) + '\n\n---\n_Report truncated. Please paste full debug JSON from clipboard._';
+    const truncatedParams = new URLSearchParams({
+      title: title,
+      body: truncatedReport,
+      labels: 'bug,csv-import'
+    });
+    window.open(`${baseUrl}?${truncatedParams.toString()}`, '_blank');
+  } else {
+    window.open(fullUrl, '_blank');
+  }
+  
+  console.log('✅ GitHub issue page opened');
 }
 

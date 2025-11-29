@@ -346,6 +346,14 @@
     <div id="diagnostics-section" class="section-container">
       <h2>🔍 Multi-Sport API Diagnostics</h2>
       
+      <!-- Verbose Mode Toggle -->
+      <div style="background: #e7f3ff; padding: 12px; border-left: 4px solid #007bff; border-radius: 3px; margin-bottom: 20px;">
+        <label class="form-group-checkbox" style="cursor: pointer;">
+          <input type="checkbox" id="verbose-diagnostics-toggle" />
+          <span><strong>🔬 Verbose Diagnostic Mode</strong> - Store full fixture data for match failures (uses more storage)</span>
+        </label>
+      </div>
+      
       <!-- Rate Limit Status -->
       <div style="margin-bottom: 25px;">
         <h3 style="margin-top: 0; color: #333; font-size: 14px;">📊 API Rate Limits (Today)</h3>
@@ -359,6 +367,47 @@
           </div>
         </div>
         <button style="margin-top: 10px;" id="refresh-rate-limits-btn">🔄 Refresh</button>
+      </div>
+
+      <!-- Test Match Tool -->
+      <div style="margin-bottom: 25px; background: #f8f9fa; padding: 15px; border-radius: 4px; border: 1px solid #dee2e6;">
+        <h3 style="margin-top: 0; color: #333; font-size: 14px;">🧪 Test Match Tool</h3>
+        <p style="font-size: 12px; color: #666; margin-bottom: 12px;">
+          Test how an event name would match against API fixtures. Enter an event name and click Test to see matching results.
+        </p>
+        <div class="grid-2" style="margin-bottom: 12px;">
+          <div class="form-group" style="margin-bottom: 0;">
+            <label for="test-event-name">Event Name:</label>
+            <input type="text" id="test-event-name" placeholder="e.g., Manchester City vs Liverpool" />
+          </div>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label for="test-event-sport">Sport:</label>
+            <select id="test-event-sport">
+              <option value="football">⚽ Football</option>
+              <option value="basketball">🏀 Basketball</option>
+              <option value="hockey">🏒 Hockey</option>
+              <option value="baseball">⚾ Baseball</option>
+              <option value="nfl">🏈 NFL</option>
+              <option value="rugby">🏉 Rugby</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom: 12px;">
+          <label for="test-event-date">Event Date:</label>
+          <input type="date" id="test-event-date" />
+        </div>
+        <button id="test-match-btn" style="background: #007bff; color: #fff; border-color: #007bff;">🔍 Test Match</button>
+        <div id="test-match-result" style="margin-top: 12px; display: none; padding: 12px; border-radius: 4px; font-size: 12px; max-height: 300px; overflow-y: auto;"></div>
+      </div>
+
+      <!-- Pending Bet Retry Tool -->
+      <div style="margin-bottom: 25px; background: #fff3cd; padding: 15px; border-radius: 4px; border: 1px solid #ffc107;">
+        <h3 style="margin-top: 0; color: #333; font-size: 14px;">🔄 Retry Pending Bets</h3>
+        <p style="font-size: 12px; color: #555; margin-bottom: 12px;">
+          Force re-check all pending bets. Useful after fixing team name issues or updating the matching logic.
+        </p>
+        <button id="retry-pending-btn" style="background: #ffc107; color: #000; border-color: #ffc107;">🔄 Retry All Pending Bets</button>
+        <span id="retry-pending-status" style="margin-left: 10px; font-size: 12px;"></span>
       </div>
 
       <!-- Supported Sports -->
@@ -421,6 +470,17 @@
 
         <div id="diagnostics-log" style="max-height: 400px; overflow-y: auto; background: #f8f9fa; border: 1px solid #ddd; border-radius: 4px; padding: 10px; font-family: monospace; font-size: 11px;">
           <div style="color: #666;">Click "Load Log" to view diagnostic entries...</div>
+        </div>
+        
+        <!-- Expanded Entry View -->
+        <div id="diagnostic-detail-modal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; padding: 20px; overflow-y: auto;">
+          <div style="max-width: 800px; margin: 0 auto; background: #fff; border-radius: 8px; padding: 20px; max-height: 90vh; overflow-y: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+              <h3 style="margin: 0;">📋 Diagnostic Entry Details</h3>
+              <button id="close-detail-modal" style="background: #dc3545; color: #fff; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer;">✕ Close</button>
+            </div>
+            <pre id="diagnostic-detail-content" style="background: #f8f9fa; padding: 15px; border-radius: 4px; overflow-x: auto; font-size: 11px; white-space: pre-wrap; word-wrap: break-word;"></pre>
+          </div>
         </div>
       </div>
 

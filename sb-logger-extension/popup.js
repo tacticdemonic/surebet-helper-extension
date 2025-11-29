@@ -1997,8 +1997,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const normalizeName = (str) => {
       if (!str) return '';
       return str.toLowerCase()
-        .replace(/[^a-z0-9\s]/g, '')
-        .replace(/\s+/g, ' ')
+        .replace(/[^a-z0-9\s]/g, '')  // Remove special chars
+        .replace(/\bvs\b/g, 'v')       // Normalize "vs" to "v"
+        .replace(/\bversus\b/g, 'v')   // Normalize "versus" to "v"
+        .replace(/\s+/g, ' ')          // Collapse whitespace
         .trim();
     };
 
@@ -2059,6 +2061,14 @@ document.addEventListener('DOMContentLoaded', () => {
           console.log(`  ✓ FUZZY MATCH FOUND (sport + event + similar market)!`);
           return pl;
         }
+      }
+      
+      // Event-only match: if sport and event match AND there's only 1 bet on this event
+      // This handles cases where market names are completely different between surebet and Betfair
+      // (e.g., "Arias/Ingildsen to win (no draw) - sets" vs "Match Odds")
+      if (sportMatch && eventMatch && betsOnSameEvent === 1) {
+        console.log(`  ✓ EVENT-ONLY MATCH FOUND (sport + event, only 1 bet on this event)!`);
+        return pl;
       }
     }
 
