@@ -882,7 +882,6 @@ function matchBetWithPLDebug(plEntry, allBets) {
       .replace(/\bset\s+(\d+)\b/g, '_SET$1_')
     // Normalize common market types to consistent keywords
     .replace(/\bdouble\s+chance\b/g, '_DOUBLECHANCE_')
-    // NOTE: "draw no bet" is now converted earlier (before slash removal)
     .replace(/\bmatch\s+odds\b/g, '_MATCHWIN_')
     .replace(/\bmoneyline\b/g, '_MATCHWIN_')
     .replace(/\b(match\s+)?winner\b/g, '_MATCHWIN_')
@@ -922,7 +921,6 @@ function matchBetWithPLDebug(plEntry, allBets) {
     // If market is ONLY "Lay" with no other market type, assume it's a match win lay
     .replace(/^_LAY_\s*_NUMS_/g, '_MATCHWIN__LAY__NUMS_')
       // Remove common filler words
-      // NOTE: "to win" is now converted to _MATCHWIN_ earlier (before slash removal)
       .replace(/\bwith\s+a?\b/g, '')
       .replace(/\bof\b/g, '')
       .replace(/\bor\b/g, '')
