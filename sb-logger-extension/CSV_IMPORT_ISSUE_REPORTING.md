@@ -41,6 +41,7 @@ This document explains the new `Report Match Issue` feature added to the CSV imp
 ## How developers can use the report
 
 - The pre-filled issue includes a short table of unmatched entries and pending bets, plus a console-style match attempt log for several unmatched entries.
+  - The report also includes the first ~50 captured console log lines from the import page, which are useful for checking normalization and matching flows.
 - Paste the full JSON from clipboard into the issue if needed for deeper debugging.
 - Use `matchAttempts` data to re-run matching logic in a dev environment and reproduce failure conditions.
 

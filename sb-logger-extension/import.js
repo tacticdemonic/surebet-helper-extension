@@ -18,11 +18,28 @@ let lastImportDebug = {
   csvEntries: [],        // Raw CSV entries
   pendingBets: [],       // Pending bets at time of import
   matchAttempts: [],     // Detailed match attempts with scores
+  consoleLogs: [],       // Captured console logs for the import session
   matchedCount: 0,
   unmatchedCount: 0
 };
 
 console.log(`📥 Import page loaded v${IMPORT_VERSION} - Debug issue reporting enabled`);
+
+// Helper to capture console logs into debug object
+function captureConsole(msg, ...args) {
+  try {
+    lastImportDebug.consoleLogs = lastImportDebug.consoleLogs || [];
+    const entry = {
+      ts: new Date().toISOString(),
+      msg: typeof msg === 'string' ? msg : (typeof msg === 'object' ? JSON.stringify(msg) : String(msg)),
+      args: args
+    };
+    lastImportDebug.consoleLogs.push(entry);
+  } catch (e) {
+    // ignore capture errors
+  }
+  console.log(msg, ...args);
+}
 
 const fileInput = document.getElementById('csv-file-input');
 const selectedFilesDiv = document.getElementById('selected-files');
@@ -635,8 +652,8 @@ async function processImportedJSON(jsonText, filename) {
 }
 
 async function processImportedData(plData, source) {
-  console.log(`🔍 Processing ${plData.length} P/L entries from ${source}`);
-  console.log(`📋 P/L entries to process:`, plData.map(e => `${e.event} | ${e.market} | ${e.profitLoss}`));
+  captureConsole(`🔍 Processing ${plData.length} P/L entries from ${source}`);
+  captureConsole(`📋 P/L entries to process: ${plData.map(e => `${e.event} | ${e.market} | ${e.profitLoss}`).join(' || ')}`);
   
   // Reset debug data for this import session
   lastImportDebug = {
@@ -650,22 +667,23 @@ async function processImportedData(plData, source) {
       isVoided: e.isVoided || false
     })),
     pendingBets: [],
+    consoleLogs: [],
     matchAttempts: [],
     matchedCount: 0,
     unmatchedCount: 0
   };
   
   // Get all pending bets from storage
-  console.log('🔍 Attempting to read bets from storage...');
-  console.log('🔍 Browser API available:', !!browser);
-  console.log('🔍 Browser storage available:', !!(browser && browser.storage));
+  captureConsole('🔍 Attempting to read bets from storage...');
+  captureConsole('🔍 Browser API available: ' + (!!browser));
+  captureConsole('🔍 Browser storage available: ' + (!!(browser && browser.storage)));
   
   let result;
   try {
     result = await browser.storage.local.get('bets');
-    console.log('🔍 Storage read successful, result:', result);
-    console.log('🔍 Result has bets key:', 'bets' in result);
-    console.log('🔍 Bets array length:', result.bets ? result.bets.length : 'undefined/null');
+    captureConsole('🔍 Storage read successful, result: ' + JSON.stringify(result));
+    captureConsole('🔍 Result has bets key: ' + ('bets' in result));
+    captureConsole('🔍 Bets array length: ' + (result.bets ? result.bets.length : 'undefined/null'));
   } catch (err) {
     console.error('❌ Storage read failed:', err);
     result = { bets: [] };
@@ -684,8 +702,8 @@ async function processImportedData(plData, source) {
     odds: b.odds
   }));
   
-  console.log(`📊 Found ${pendingBets.length} pending bets to match against ${plData.length} P/L entries`);
-  console.log(`📋 Pending bets:`, pendingBets.map(b => `${b.event} | ${b.market} | ${b.bookmaker} | status=${b.status}`));
+  captureConsole(`📊 Found ${pendingBets.length} pending bets to match against ${plData.length} P/L entries`);
+  captureConsole('📋 Pending bets: ' + pendingBets.map(b => `${b.event} | ${b.market} | ${b.bookmaker} | status=${b.status}`).join(' || '));
   
   let matchedCount = 0;
   let updatedBets = [...allBets];
@@ -709,10 +727,10 @@ async function processImportedData(plData, source) {
         updatedBets[betIndex].status = newStatus;
         updatedBets[betIndex].actualPL = plEntry.profitLoss;
         matchedCount++;
-        console.log(`✅ Matched: ${matchResult.match.event} - ${newStatus} (${plEntry.profitLoss})`);
+        captureConsole(`✅ Matched: ${matchResult.match.event} - ${newStatus} (${plEntry.profitLoss})`);
       }
     } else {
-      console.log(`❌ No match found for: "${plEntry.event}" - "${plEntry.market}"`);
+      captureConsole(`❌ No match found for: "${plEntry.event}" - "${plEntry.market}"`);
     }
   }
   
@@ -734,8 +752,8 @@ async function processImportedData(plData, source) {
     console.warn('⚠️ Unable to trigger bankroll recalc from import page:', err?.message || err);
   }
   
-  console.log(`✅ Import complete: ${matchedCount} bets updated`);
-  console.log(`🐛 Debug data captured:`, lastImportDebug);
+  captureConsole(`✅ Import complete: ${matchedCount} bets updated`);
+  captureConsole('🐛 Debug data captured: ' + JSON.stringify(lastImportDebug));
   
   showResults(
     'success',
@@ -808,7 +826,7 @@ function matchBetWithPLDebug(plEntry, allBets) {
   };
   
   const normalizeMarket = (str, eventName = '') => {
-    console.log(`    🔧 normalizeMarket v2.3 called: "${str}" (event: "${eventName}")`);
+    captureConsole(`    🔧 normalizeMarket v2.3 called: "${str}" (event: "${eventName}")`);
     
     // Extract team/player names from event to remove from market
     const eventParts = eventName.toLowerCase().split(/\s+(?:vs|v|at|versus)\s+/i);
@@ -960,8 +978,8 @@ function matchBetWithPLDebug(plEntry, allBets) {
     matchReason: null
   };
   
-  console.log(`\n  📍 Checking CSV: "${plEntry.event}"`);
-  console.log(`     Normalized: "${plEvent}"`);
+  captureConsole(`\n  📍 Checking CSV: "${plEntry.event}"`);
+  captureConsole(`     Normalized: "${plEvent}"`);
   
   for (const bet of allBets) {
     if (bet.status !== 'pending') continue;
@@ -970,7 +988,7 @@ function matchBetWithPLDebug(plEntry, allBets) {
     const betMarket = normalizeMarket(bet.market || '', bet.event || '');
     const betSport = normalizeString(bet.sport || '');
     
-    console.log(`     vs Saved: "${bet.event}" → "${betEvent}" (${plEvent === betEvent ? '✅' : '❌'})`);
+    captureConsole(`     vs Saved: "${bet.event}" → "${betEvent}" (${plEvent === betEvent ? '✅' : '❌'})`);
     
     // SKIP sport check - CSV files don't have reliable sport data
     // Tennis events are often mislabeled as "Football" in Exchange CSVs
@@ -994,7 +1012,7 @@ function matchBetWithPLDebug(plEntry, allBets) {
       eventMatchRatio = commonTokens.length / Math.min(plEventTokens.length, betEventTokens.length);
       if (eventMatchRatio >= 0.6 && commonTokens.length >= 2) {
         eventMatches = true;
-        console.log(`🔄 Fuzzy event match (${Math.round(eventMatchRatio * 100)}%): "${plEntry.event}" ≈ "${bet.event}"`);
+        captureConsole(`🔄 Fuzzy event match (${Math.round(eventMatchRatio * 100)}%): "${plEntry.event}" ≈ "${bet.event}"`);
       }
     }
     
@@ -1003,9 +1021,9 @@ function matchBetWithPLDebug(plEntry, allBets) {
     }
     
     // Events match - now check market
-    console.log(`\n🔍 Event match found: "${plEntry.event}"`);
-    console.log(`   CSV market: "${plEntry.market}" → normalized: "${plMarket}"`);
-    console.log(`   Saved market: "${bet.market}" → normalized: "${betMarket}"`);
+    captureConsole(`\n🔍 Event match found: "${plEntry.event}"`);
+    captureConsole(`   CSV market: "${plEntry.market}" → normalized: "${plMarket}"`);
+    captureConsole(`   Saved market: "${bet.market}" → normalized: "${betMarket}"`);
     
     // Calculate all similarity scores
     const levenSimilarity = 1 - (levenshteinDistance(plMarket, betMarket) / Math.max(plMarket.length, betMarket.length));
@@ -1049,11 +1067,11 @@ function matchBetWithPLDebug(plEntry, allBets) {
       return { match: bet, debugInfo };
     }
     
-    console.log(`   Similarity: ${Math.round(levenSimilarity * 100)}%`);
+    captureConsole(`   Similarity: ${Math.round(levenSimilarity * 100)}%`);
     
     // More lenient threshold - if events match, accept 50%+ similarity
     if (levenSimilarity >= 0.5) {
-      console.log(`✅ Fuzzy match accepted!`);
+      captureConsole(`✅ Fuzzy match accepted!`);
       candidate.matched = true;
       candidate.matchReason = 'levenshtein_50pct';
       debugInfo.candidates.push(candidate);
@@ -1063,12 +1081,12 @@ function matchBetWithPLDebug(plEntry, allBets) {
       return { match: bet, debugInfo };
     }
     
-    console.log(`   Token overlap: ${Math.round(tokenSimilarity * 100)}% (${intersection.size}/${union.size} tokens)`);
-    console.log(`   Common tokens: [${Array.from(intersection).join(', ')}]`);
+    captureConsole(`   Token overlap: ${Math.round(tokenSimilarity * 100)}% (${intersection.size}/${union.size} tokens)`);
+    captureConsole(`   Common tokens: [${Array.from(intersection).join(', ')}]`);
     
     // Lower threshold to 30% for token overlap
     if (tokenSimilarity >= 0.3) {
-      console.log(`✅ Token match accepted!`);
+      captureConsole(`✅ Token match accepted!`);
       candidate.matched = true;
       candidate.matchReason = 'token_overlap_30pct';
       debugInfo.candidates.push(candidate);
@@ -1080,12 +1098,12 @@ function matchBetWithPLDebug(plEntry, allBets) {
     
     // Special case: If both have key market identifiers and numbers match
     if (sharedMarketType.length > 0) {
-      console.log(`   Shared market types: [${sharedMarketType.join(', ')}]`);
-      console.log(`   Shared numbers: [${sharedNums.join(', ')}]`);
+      captureConsole(`   Shared market types: [${sharedMarketType.join(', ')}]`);
+      captureConsole(`   Shared numbers: [${sharedNums.join(', ')}]`);
       
       // If same market type and numbers match (or no numbers in saved bet), accept
       if (sharedMarketType.length > 0 && (sharedNums.length > 0 || plNums.size === 0)) {
-        console.log(`✅ Market type + numbers match accepted!`);
+        captureConsole(`✅ Market type + numbers match accepted!`);
         candidate.matched = true;
         candidate.matchReason = 'market_type_numbers';
         debugInfo.candidates.push(candidate);
@@ -1314,6 +1332,19 @@ function buildDebugReport() {
     report += `---\n`;
   }
   
+  report += `\`\`\`\n\n`;
+  report += `</details>\n\n`;
+
+  // Captured console logs (first 50 entries)
+  report += `### Captured Console Logs\n\n`;
+  report += `<details>\n<summary>Captured console output (first 50 lines)</summary>\n\n`;
+  report += `\`\`\`\n`;
+  const consoleLogs = (debug.consoleLogs || []).slice(0, 50);
+  for (const entry of consoleLogs) {
+    const ts = entry.ts || '';
+    const msg = typeof entry.msg === 'string' ? entry.msg : JSON.stringify(entry.msg);
+    report += `${ts} ${msg}\n`;
+  }
   report += `\`\`\`\n\n`;
   report += `</details>\n\n`;
   
