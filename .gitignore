@@ -46,5 +46,8 @@ tmp/
 temp/
 *.tmp
 
+# Workspace temporary directory containing exports and debug CSVs
+/Temp Files/
+
 # Extension store assets (screenshots, promotional images)
 store-assets/
