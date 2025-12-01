@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.96.1] - 2025-12-01
+
+### 🐛 Bug Fixes
+- **Market filter persistence**: Fixed incomplete `DEFAULT_UI_PREFERENCES` in contentScript.js that was missing market filter properties, causing settings to reset on extension updates. Now properly includes `marketFilterEnabled`, `marketFilterMode`, and `activePresets`.
+- **Settings loading**: Changed from `||` to `??` (nullish coalescing) in `loadMarketFilterSettings()` to properly handle `false` values and ensure saved settings persist correctly.
+
 ## [1.0.96] - 2025-12-01
 
 ### ✨ New Features

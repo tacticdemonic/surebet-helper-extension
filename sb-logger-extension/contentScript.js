@@ -103,7 +103,11 @@ function () {
   };
   
   const DEFAULT_UI_PREFERENCES = {
-    hideLayBets: false
+    hideLayBets: false,
+    showPendingOnly: false,
+    marketFilterEnabled: false,
+    marketFilterMode: 'hide',
+    activePresets: []
   };
   
   const DEFAULT_AUTOFILL_SETTINGS = {
@@ -2266,9 +2270,9 @@ function () {
     api.storage.local.get({ uiPreferences: {} }, (res) => {
       const prefs = res.uiPreferences || {};
       marketFilterSettings = {
-        enabled: prefs.marketFilterEnabled || false,
-        mode: prefs.marketFilterMode || 'hide',
-        activePresets: prefs.activePresets || []
+        enabled: prefs.marketFilterEnabled ?? false,
+        mode: prefs.marketFilterMode ?? 'hide',
+        activePresets: prefs.activePresets ?? []
       };
       
       console.log('📋 [ContentScript] Market filter settings loaded:', marketFilterSettings);
