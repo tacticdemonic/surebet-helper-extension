@@ -1001,9 +1001,10 @@ async function handleCheckResults() {
     // Update retry counts and statuses
     // Re-fetch bets from storage to avoid race conditions with manual updates
     const freshStorage = await new Promise((resolve) => {
-      chrome.storage.local.get({ bets: [] }, resolve);
+      chrome.storage.local.get({ bets: [], commission: DEFAULT_COMMISSION_RATES }, resolve);
     });
     const bets = freshStorage.bets || [];
+    const commissionRates = freshStorage.commission || DEFAULT_COMMISSION_RATES;
     
     let updated = false;
     let unsupportedCount = 0;
@@ -1011,6 +1012,8 @@ async function handleCheckResults() {
     
     results.forEach(r => {
       const bet = bets.find(b => getBetKey(b) === r.betId);
+      // Make commission rates available in this scope
+      const res = { commission: commissionRates };
       if (bet) {
         // Skip if bet is no longer pending (manually marked as won/lost/void)
         if (bet.status && bet.status !== 'pending') {
@@ -1047,17 +1050,33 @@ async function handleCheckResults() {
         if (r.outcome !== null && (!bet.status || bet.status === 'pending')) {
           bet.status = r.outcome;
           bet.settledAt = new Date().toISOString();
-          // Calculate actual P/L
+          // Calculate actual P/L with commission (different for back vs lay)
           const stake = parseFloat(bet.stake) || 0;
           const odds = parseFloat(bet.odds) || 0;
+          const commissionRates = res.commission || DEFAULT_COMMISSION_RATES;
+          const commission = getCommissionFromMap(bet.bookmaker, commissionRates);
+          
           if (r.outcome === 'won') {
-            bet.actualPL = stake * (odds - 1);
+            if (bet.isLay) {
+              const gross = stake;
+              const commissionAmount = commission > 0 ? (gross * commission / 100) : 0;
+              bet.actualPL = gross - commissionAmount;
+            } else {
+              const grossProfit = (stake * odds) - stake;
+              const commissionAmount = commission > 0 ? (grossProfit * commission / 100) : 0;
+              bet.actualPL = grossProfit - commissionAmount;
+            }
           } else if (r.outcome === 'lost') {
-            bet.actualPL = -stake;
+            if (bet.isLay) {
+              const layOdds = parseFloat(bet.originalLayOdds) || odds;
+              bet.actualPL = -(stake * (layOdds - 1));
+            } else {
+              bet.actualPL = -stake;
+            }
           } else if (r.outcome === 'void') {
             bet.actualPL = 0;
           }
-          console.log(`✅ Auto-settled ${bet.event} as ${r.outcome}`);
+          console.log(`✅ Auto-settled ${bet.event} as ${r.outcome} (actualPL: ${bet.actualPL?.toFixed(2) || 0})`);
           updated = true;
         }
       }

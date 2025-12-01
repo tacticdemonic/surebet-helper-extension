@@ -18,6 +18,7 @@
 - **Visual charts**: Interactive graph showing your P/L and Expected EV trends over time
 - **Export & manage**: View all saved bets in popup, export to JSON/CSV, or clear all
 - **Auto-Hide Bets**: Automatically hides bets on surebet.com immediately after saving them (configurable in Settings).
+ - **Market Filters (On-site & Popup)**: Configure market-level filtering to hide or highlight types of markets both in the saved-bets popup and directly on surebet.com (e.g., Asian Handicap, DNB, Cards).
 
 ## Installation
 
@@ -63,6 +64,26 @@
 7. **Track performance**: See your running P/L and ROI at the top of the popup
 8. **View Chart**: Click 📊 View Chart to see a visual graph of your P/L vs Expected EV over time
 9. Use **Export JSON** or **Export CSV** to download, or **Clear All** to delete
+ 
+## Market Filters (on-site)
+
+You can now configure Market Filters under the extension **⚙️ Settings → Market Filters**. Market filters support both **Hide** and **Highlight** modes and are applied to both:
+
+- Saved Bets Popup — hides or highlights saved bets by market type
+- surebet.com valuebets page — hides or highlights rows in the valuebets table
+
+Usage:
+1. Click the extension icon → ⚙️ Settings → Market Filters
+2. Choose a preset (Asian Handicap, DNB, Cards, Goals Only, Corners Only)
+3. Set Mode: **Hide** (completely remove rows) or **Highlight** (red border/badge, see screenshot)
+4. Reload the surebet.com/valuebets page to apply filters
+
+Pattern matching notes:
+- Abbreviations like `AH`, `AH1`, `AH2`, and `DNB` are matched using a lookahead regex to properly catch `AH2(+1.5)` and similar variations.
+- Words like `Asian handicap` are matched using whole-word boundaries.
+- The whitelist-first logic allows `Goals Only` and `Corners Only` to override blacklist presets.
+
+This feature was added to allow you to continue browsing the surebet table while masking out market types you do not want to see, or to highlight them for an extra layer of caution.
    
   For debugging CSV import issues: you can export only pending (unsettled) bets from the extension settings: **⚙️ Settings → 🗑️ Data → 🐛 Debug Export → Export Pending Bets (JSON)**. This is useful when you want to reproduce an import parser issue or inspect unsettled data.
   

@@ -36,6 +36,10 @@
     .warning-box { background: #fff3cd; padding: 12px; border-left: 4px solid #ffc107; border-radius: 3px; margin-bottom: 15px; font-size: 12px; }
     .link-button { color: #007bff; text-decoration: underline; cursor: pointer; background: none; border: none; padding: 0; font-size: inherit; font-weight: inherit; }
     .link-button:hover { color: #0056b3; }
+    .preset-box { border: 2px solid transparent; }
+    .preset-box:hover { background: #f8f9fa !important; }
+    .preset-box.active { border-color: #28a745; background: #d4edda !important; position: relative; }
+    .preset-box.active::before { content: '✓ Active'; position: absolute; top: 5px; right: 10px; background: #28a745; color: #fff; padding: 2px 8px; border-radius: 3px; font-size: 10px; font-weight: 600; }
   </style>
 </head>
 <body>
@@ -48,6 +52,7 @@
       <button class="nav-btn" data-section="autofill">⚡ Auto-Fill</button>
       <button class="nav-btn" data-section="defaults">⚙️ Default Actions</button>
       <button class="nav-btn" data-section="kelly">🎲 Kelly Staking</button>
+      <button class="nav-btn" data-section="marketfilters">🎯 Market Filters</button>
       <button class="nav-btn" data-section="api">🔑 API Setup</button>
       <button class="nav-btn" data-section="diagnostics">🔍 API Diagnostics</button>
       <button class="nav-btn" data-section="data">🗑️ Data</button>
@@ -273,6 +278,149 @@
       </div>
     </div>
 
+    <!-- Market Filters Section -->
+    <div id="marketfilters-section" class="section-container">
+      <h2>🎯 Market Type Filtering</h2>
+      <div class="info-box">
+        <strong>ℹ️ Filter Underperforming Markets</strong><br>
+        Hide or highlight specific bet types based on historical performance. Use preset filters to block high-risk markets (cards, Asian handicaps) or show only profitable markets (goals, corners).
+      </div>
+
+      <!-- Filter Controls -->
+      <div style="margin-bottom: 25px;">
+        <h3 style="margin-top: 0; color: #333; font-size: 14px;">Filter Settings</h3>
+        
+        <div class="form-group">
+          <label class="form-group-checkbox">
+            <input type="checkbox" id="market-filter-enabled">
+            <span style="font-weight: 600;">Enable Market Filter</span>
+          </label>
+          <p class="note">When enabled, bets will be filtered based on selected presets below.</p>
+        </div>
+
+        <div class="form-group">
+          <label>Filter Mode</label>
+          <div style="display: flex; gap: 15px; margin-top: 8px;">
+            <label class="form-group-checkbox">
+              <input type="radio" name="filter-mode" id="filter-mode-hide" value="hide" checked>
+              <span>Hide - Completely remove filtered bets from view</span>
+            </label>
+            <label class="form-group-checkbox">
+              <input type="radio" name="filter-mode" id="filter-mode-highlight" value="highlight">
+              <span>Highlight Red - Show filtered bets with red warning styling</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-bottom: 25px;">
+        <h3 style="margin-top: 0; color: #333; font-size: 14px;">Available Market Presets</h3>
+        <p style="font-size: 12px; color: #666; margin-bottom: 15px;">
+          Click preset titles to toggle them on/off. Active presets will be highlighted in green.
+        </p>
+
+        <!-- Blacklist Presets -->
+        <div style="background: #fff3cd; padding: 15px; border-radius: 4px; border-left: 4px solid #ffc107; margin-bottom: 15px;">
+          <div style="font-weight: 600; margin-bottom: 10px; color: #856404;">🚫 Blacklist Presets (Block These Markets)</div>
+          
+          <div id="preset-cards-box" class="preset-box" data-preset="cards" style="margin-bottom: 12px; padding: 10px; background: #fff; border-radius: 3px; cursor: pointer; transition: all 0.2s;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+              <span style="font-weight: 600; color: #333;">Cards / Bookings Markets</span>
+              <span id="roi-cards" style="font-size: 11px; color: #6c757d; font-weight: 600;">Calculating...</span>
+            </div>
+            <p style="margin: 5px 0; font-size: 12px; color: #666;">
+              <strong>Matches markets containing:</strong> card, booking, yellow, red
+            </p>
+            <p style="margin: 5px 0; font-size: 11px; color: #666;">
+              Examples: "Yellow cards", "Total bookings over 3.5", "Red card - Yes"
+            </p>
+          </div>
+
+          <div id="preset-asian_handicap-box" class="preset-box" data-preset="asian_handicap" style="margin-bottom: 12px; padding: 10px; background: #fff; border-radius: 3px; cursor: pointer; transition: all 0.2s;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+              <span style="font-weight: 600; color: #333;">Asian Handicap Markets</span>
+              <span id="roi-asian_handicap" style="font-size: 11px; color: #6c757d; font-weight: 600;">Calculating...</span>
+            </div>
+            <p style="margin: 5px 0; font-size: 12px; color: #666;">
+              <strong>Matches markets containing:</strong> asian handicap, ah
+            </p>
+            <p style="margin: 5px 0; font-size: 11px; color: #666;">
+              Examples: "Asian handicap +1.5", "AH -0.5"
+            </p>
+          </div>
+
+          <div id="preset-dnb-box" class="preset-box" data-preset="dnb" style="margin-bottom: 0; padding: 10px; background: #fff; border-radius: 3px; cursor: pointer; transition: all 0.2s;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+              <span style="font-weight: 600; color: #333;">Draw No Bet Markets</span>
+              <span id="roi-dnb" style="font-size: 11px; color: #6c757d; font-weight: 600;">Calculating...</span>
+            </div>
+            <p style="margin: 5px 0; font-size: 12px; color: #666;">
+              <strong>Matches markets containing:</strong> draw no bet, dnb
+            </p>
+            <p style="margin: 5px 0; font-size: 11px; color: #666;">
+              Examples: "Draw no bet - Home", "DNB - Away"
+            </p>
+          </div>
+        </div>
+
+        <!-- Whitelist Presets -->
+        <div style="background: #d4edda; padding: 15px; border-radius: 4px; border-left: 4px solid #28a745;">
+          <div style="font-weight: 600; margin-bottom: 10px; color: #155724;">✅ Whitelist Presets (Show Only These Markets)</div>
+          <p style="margin: 0 0 15px 0; font-size: 11px; color: #155724;">
+            <strong>Note:</strong> Whitelist presets override blacklist filters. When active, only whitelisted markets are shown.
+          </p>
+          
+          <div id="preset-goals_only-box" class="preset-box" data-preset="goals_only" style="margin-bottom: 12px; padding: 10px; background: #fff; border-radius: 3px; cursor: pointer; transition: all 0.2s;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+              <span style="font-weight: 600; color: #333;">Goals Markets Only</span>
+              <span id="roi-goals_only" style="font-size: 11px; color: #6c757d; font-weight: 600;">Calculating...</span>
+            </div>
+            <p style="margin: 5px 0; font-size: 12px; color: #666;">
+              <strong>Matches markets containing:</strong> goal, btts, over, under, total
+            </p>
+            <p style="margin: 5px 0; font-size: 11px; color: #666;">
+              Examples: "Over 2.5 goals", "BTTS - Yes", "Total goals under 3.5", "First goal"
+            </p>
+          </div>
+
+          <div id="preset-corners_only-box" class="preset-box" data-preset="corners_only" style="margin-bottom: 0; padding: 10px; background: #fff; border-radius: 3px; cursor: pointer; transition: all 0.2s;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+              <span style="font-weight: 600; color: #333;">Corners Markets Only</span>
+              <span id="roi-corners_only" style="font-size: 11px; color: #6c757d; font-weight: 600;">Calculating...</span>
+            </div>
+            <p style="margin: 5px 0; font-size: 12px; color: #666;">
+              <strong>Matches markets containing:</strong> corner
+            </p>
+            <p style="margin: 5px 0; font-size: 11px; color: #666;">
+              Examples: "Total corners over 9.5", "Corner handicap +2.5"
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-bottom: 25px;">
+        <h3 style="margin-top: 0; color: #333; font-size: 14px;">How It Works</h3>
+        <div style="font-size: 12px; color: #666; line-height: 1.6;">
+          <p style="margin: 0 0 10px 0;">
+            <strong>1. Precise Matching:</strong> Filters use word-boundary matching to avoid false positives (e.g., "scorecard" won't match the "card" filter).
+          </p>
+          <p style="margin: 0 0 10px 0;">
+            <strong>2. Whitelist Priority:</strong> If you enable a whitelist preset (Goals Only or Corners Only), blacklist filters are ignored and only whitelisted markets are shown.
+          </p>
+          <p style="margin: 0 0 10px 0;">
+            <strong>3. Filter Modes:</strong> Choose "Hide" to completely remove filtered bets from view, or "Highlight Red" to keep them visible with red styling and a ⚠️ warning badge.
+          </p>
+          <p style="margin: 0;">
+            <strong>4. Quick Access:</strong> Toggle presets directly from the popup using the preset buttons, or manage them here in Settings.
+          </p>
+        </div>
+      </div>
+
+      <div class="button-row">
+        <button class="btn-cancel js-close-window" type="button">Close</button>
+      </div>
+    </div>
+
     <!-- API Setup Section -->
     <div id="api-section" class="section-container">
       <h2>Sports APIs for Result Checking</h2>
@@ -492,6 +640,19 @@
     <!-- Data Management Section -->
     <div id="data-section" class="section-container">
       <h2>Data Management</h2>
+      
+      <!-- Export All Bets -->
+      <div style="background: #d4edda; padding: 15px; border-radius: 4px; border-left: 4px solid #28a745; margin-bottom: 20px;">
+        <div style="font-weight: 600; margin-bottom: 8px; color: #155724;">📥 Export All Bets</div>
+        <p style="margin: 0 0 15px 0; font-size: 12px; color: #155724;">
+          Export all saved bets (pending and settled) with complete analysis data.
+        </p>
+        <div style="display: flex; gap: 10px;">
+          <button style="background: #28a745; color: #fff; border-color: #28a745;" id="export-json-all-btn">📄 Export JSON</button>
+          <button style="background: #28a745; color: #fff; border-color: #28a745;" id="export-csv-all-btn">📊 Export CSV</button>
+        </div>
+      </div>
+      
       <div class="warning-box">
         <strong>⚠️ Destructive Action</strong><br>
         The following action will permanently delete all saved bets. This cannot be undone.

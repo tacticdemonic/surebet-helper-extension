@@ -212,4 +212,29 @@ Then test again and report if pendingBet now appears on Smarkets.
 
 The detailed logging will pinpoint the exact failure point in the auto-fill flow.
 
+---
+
+## Market Filtering (On-site) — Implementation Notes (v1.0.95)
+
+This section documents the work done in `contentScript.js` to add market-level filtering directly on the surebet.com valuebets page. The content script now reads the same `uiPreferences` market filter settings as the popup and hides or highlights rows accordingly.
+
+Key Implementation Points:
+- `MARKET_FILTER_PRESETS` was added to the content script and mirrors the same preset definitions used by the popup (cards, asian_handicap, dnb, goals_only, corners_only).
+- `compileMarketPatterns(activePresets)` builds regex patterns, handling abbreviations like `AH` via a lookahead and using `\b` word boundaries for longer keywords.
+- `loadMarketFilterSettings()` retrieves `uiPreferences` from `chrome.storage.local` and sets `marketFilterSettings` (with a resilient `api` definition for cross-browser compatibility).
+- `applyMarketFilters()` iterates `tbody.valuebet_record`, extracts market text from the `jsonBody` in the bet link, and hides/highlights rows based on `isMarketFiltered(market)`.
+- `isMarketFiltered(market)` performs whitelist-first logic and applies blacklist patterns only when no whitelist is active.
+
+CSS & UX:
+- `.surebet-helper-market-filtered` hides rows completely; used when `marketFilterMode === 'hide'`.
+- `.surebet-helper-market-blocked` highlights rows with a red border and a small `⚠️ FILTERED MARKET` badge; used when `marketFilterMode === 'highlight'`.
+
+Debugging:
+- `applyMarketFilters()` logs: loaded settings, compiled pattern keys, the market string being checked, and the final decision (HIDE/HIGHLIGHT/ALLOWED) to the console for diagnosis.
+
+Developer notes:
+- To add a new market type, add keywords to `MARKET_FILTER_PRESETS` and they will automatically compile and be used by the content script.
+- If a new market format uses non-Latin characters or unusual separators, extend `compileMarketPatterns()` to handle those specifics and test with representative market strings.
+
+
 

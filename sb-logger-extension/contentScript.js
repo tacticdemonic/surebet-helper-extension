@@ -126,6 +126,42 @@ function () {
     dustbinActionAfterSave: 'none' // 'none' | 'hide-valuebet' | 'hide-event'
   };
 
+  // Market filter presets (same as popup.js)
+  const MARKET_FILTER_PRESETS = {
+    cards: {
+      name: 'Cards & Bookings',
+      keywords: ['card', 'booking', 'yellow', 'red'],
+      type: 'block'
+    },
+    asian_handicap: {
+      name: 'Asian Handicap',
+      keywords: ['asian handicap', 'ah'],
+      type: 'block'
+    },
+    dnb: {
+      name: 'Draw No Bet',
+      keywords: ['draw no bet', 'dnb'],
+      type: 'block'
+    },
+    goals_only: {
+      name: 'Goals Only (Whitelist)',
+      keywords: ['goal', 'btts', 'over', 'under'],
+      type: 'whitelist'
+    },
+    corners_only: {
+      name: 'Corners Only (Whitelist)',
+      keywords: ['corner'],
+      type: 'whitelist'
+    }
+  };
+
+  let COMPILED_MARKET_PATTERNS = {};
+  let marketFilterSettings = {
+    enabled: false,
+    mode: 'hide', // 'hide' or 'highlight'
+    activePresets: []
+  };
+
   // Betting slip selectors for each exchange/betting site
   // 
   // HOW TO ADD A NEW BETTING SITE:
@@ -543,6 +579,27 @@ function () {
     }
     .surebet-helper-hidden-row {
       display: none !important;
+    }
+    .surebet-helper-market-filtered {
+      display: none !important;
+    }
+    .surebet-helper-market-blocked {
+      background: rgba(220, 53, 69, 0.15) !important;
+      border: 2px solid #dc3545 !important;
+      position: relative;
+    }
+    .surebet-helper-market-blocked::before {
+      content: '⚠️ FILTERED MARKET';
+      position: absolute;
+      top: 5px;
+      right: 5px;
+      background: #dc3545;
+      color: white;
+      padding: 2px 8px;
+      border-radius: 3px;
+      font-size: 11px;
+      font-weight: bold;
+      z-index: 10;
     }
     .surebet-helper-stake-panel {
       position: fixed;
@@ -2105,6 +2162,168 @@ function () {
     console.log('Surebet Helper: Preset buttons injected successfully at the top!');
   }
 
+  function compileMarketPatterns(activePresets) {
+    console.log('🔨 [ContentScript] Compiling market filter patterns for presets:', activePresets);
+    COMPILED_MARKET_PATTERNS = {};
+    
+    activePresets.forEach(presetId => {
+      const preset = MARKET_FILTER_PRESETS[presetId];
+      if (!preset) {
+        console.warn('⚠️ Unknown preset ID:', presetId);
+        return;
+      }
+      
+      // Build pattern parts - handle abbreviations like "AH" that may be followed by digits
+      const patternParts = preset.keywords.map(keyword => {
+        // If keyword is short (2-3 chars, likely abbreviation), use lookahead instead of word boundary at end
+        // This allows matching "AH1", "AH2", "DNB1" etc.
+        if (keyword.length <= 3 && /^[a-z]+$/i.test(keyword)) {
+          return `\\b${keyword}(?=\\d|\\(|\\s|$|-)`;
+        }
+        // For multi-word or longer keywords, use word boundaries
+        return `\\b${keyword}\\b`;
+      });
+      
+      const pattern = new RegExp(`(${patternParts.join('|')})`, 'i');
+      COMPILED_MARKET_PATTERNS[presetId] = {
+        pattern: pattern,
+        type: preset.type,
+        name: preset.name
+      };
+      console.log(`🔨 [ContentScript] Compiled pattern for ${presetId}:`, pattern);
+    });
+  }
+
+  function isMarketFiltered(market) {
+    if (!marketFilterSettings.enabled) return false;
+    if (!market) return false;
+    
+    const activePresets = marketFilterSettings.activePresets || [];
+    if (activePresets.length === 0) return false;
+    
+    // Check if any whitelist presets are active (goals_only, corners_only)
+    const whitelistPresets = activePresets.filter(id => {
+      const compiled = COMPILED_MARKET_PATTERNS[id];
+      return compiled && compiled.type === 'whitelist';
+    });
+    
+    const blacklistPresets = activePresets.filter(id => {
+      const compiled = COMPILED_MARKET_PATTERNS[id];
+      return compiled && compiled.type === 'block';
+    });
+    
+    const marketLower = market.toLowerCase();
+    
+    // Whitelist-first logic: if any whitelist preset is active, only show whitelisted markets
+    if (whitelistPresets.length > 0) {
+      const matchesWhitelist = whitelistPresets.some(id => {
+        const compiled = COMPILED_MARKET_PATTERNS[id];
+        return compiled && compiled.pattern.test(marketLower);
+      });
+      
+      if (!matchesWhitelist) {
+        console.log(`🔍 [ContentScript] Market "${market}" does NOT match whitelist - FILTERING`);
+        return true; // Market is filtered (blocked)
+      }
+      
+      return false;
+    }
+    
+    // No whitelists active - apply blacklist filters
+    if (blacklistPresets.length > 0) {
+      const matchesBlacklist = blacklistPresets.some(id => {
+        const compiled = COMPILED_MARKET_PATTERNS[id];
+        const isMatch = compiled && compiled.pattern.test(marketLower);
+        if (isMatch) {
+          console.log(`🔍 [ContentScript] Market "${market}" matches ${id} pattern - FILTERING`);
+        }
+        return isMatch;
+      });
+      
+      return matchesBlacklist;
+    }
+    
+    return false;
+  }
+
+  function loadMarketFilterSettings(callback) {
+    const api = typeof chrome !== 'undefined' ? chrome : browser;
+    api.storage.local.get({ uiPreferences: {} }, (res) => {
+      const prefs = res.uiPreferences || {};
+      marketFilterSettings = {
+        enabled: prefs.marketFilterEnabled || false,
+        mode: prefs.marketFilterMode || 'hide',
+        activePresets: prefs.activePresets || []
+      };
+      
+      console.log('📋 [ContentScript] Market filter settings loaded:', marketFilterSettings);
+      
+      // Compile patterns if there are active presets
+      if (marketFilterSettings.activePresets.length > 0) {
+        compileMarketPatterns(marketFilterSettings.activePresets);
+      }
+      
+      if (callback) callback();
+    });
+  }
+
+  function applyMarketFilters() {
+    if (!marketFilterSettings.enabled) {
+      console.log('📋 [ContentScript] Market filters disabled, skipping');
+      return;
+    }
+    
+    const mainTable = document.querySelector('table');
+    if (!mainTable) return;
+    
+    const rows = mainTable.querySelectorAll('tbody.valuebet_record');
+    let filteredCount = 0;
+    
+    console.log(`📋 [ContentScript] Applying market filters to ${rows.length} rows`);
+    console.log(`📋 [ContentScript] Settings:`, marketFilterSettings);
+    console.log(`📋 [ContentScript] Compiled patterns:`, Object.keys(COMPILED_MARKET_PATTERNS));
+    
+    rows.forEach(row => {
+      const link = row.querySelector('a[href*="/nav/valuebet/prong/"]');
+      if (!link || !link.href) {
+        console.log('📋 [ContentScript] Row has no link, skipping');
+        return;
+      }
+      
+      const linkData = parseSurebetLinkData(link.href);
+      if (!linkData) {
+        console.log('📋 [ContentScript] Failed to parse link data');
+        return;
+      }
+      
+      if (!linkData.market) {
+        console.log('📋 [ContentScript] No market in link data:', linkData);
+        return;
+      }
+      
+      console.log(`📋 [ContentScript] Checking market: "${linkData.market}"`);
+      const shouldFilter = isMarketFiltered(linkData.market);
+      console.log(`📋 [ContentScript] shouldFilter = ${shouldFilter}, mode = ${marketFilterSettings.mode}`);
+      
+      if (shouldFilter) {
+        if (marketFilterSettings.mode === 'hide') {
+          row.classList.add('surebet-helper-market-filtered');
+          filteredCount++;
+          console.log(`📋 [ContentScript] ✓ HIDDEN: "${linkData.market}"`);
+        } else if (marketFilterSettings.mode === 'highlight') {
+          row.classList.add('surebet-helper-market-blocked');
+          console.log(`📋 [ContentScript] ✓ HIGHLIGHTED: "${linkData.market}"`);
+        }
+      } else {
+        row.classList.remove('surebet-helper-market-filtered', 'surebet-helper-market-blocked');
+      }
+    });
+    
+    if (filteredCount > 0) {
+      console.log(`📋 [ContentScript] Filtered ${filteredCount} rows based on market type`);
+    }
+  }
+
   function toggleLayBets() {
     if (isDisabled) {
       return;
@@ -2721,6 +2940,48 @@ function () {
     return stakeInput;
   }
 
+  function findOddsInput(exchange, isLay = false) {
+    const selectors = BETTING_SLIP_SELECTORS[exchange];
+    if (!selectors || !selectors.odds) {
+      console.warn('Surebet Helper: No odds selectors defined for exchange:', exchange);
+      debugLogger.log('findOddsInput', 'No odds selectors defined', { exchange }, 'warn');
+      return null;
+    }
+
+    debugLogger.log('findOddsInput', 'Looking for odds input', { exchange, isLay });
+
+    // For exchanges with separate back/lay inputs, try to find the correct one
+    if (isLay && selectors.layBet) {
+      const layContainer = document.querySelector(selectors.layBet);
+      if (layContainer) {
+        debugLogger.log('findOddsInput', 'Lay bet container found');
+        const input = findElement(selectors.odds);
+        if (input && input.closest(selectors.layBet)) {
+          debugLogger.log('findOddsInput', 'Lay odds input matched');
+          return input;
+        }
+      }
+    }
+
+    if (!isLay && selectors.backBet) {
+      const backContainer = document.querySelector(selectors.backBet);
+      if (backContainer) {
+        debugLogger.log('findOddsInput', 'Back bet container found');
+        const input = findElement(selectors.odds);
+        if (input && input.closest(selectors.backBet)) {
+          debugLogger.log('findOddsInput', 'Back odds input matched');
+          return input;
+        }
+      }
+    }
+
+    // Fallback: just find any odds input
+    const oddsInput = findElement(selectors.odds);
+    debugLogger.log('findOddsInput', 'Fallback search result', { exchange, found: !!oddsInput });
+    console.log('Surebet Helper: findOddsInput result:', oddsInput, 'for exchange:', exchange);
+    return oddsInput;
+  }
+
   async function waitForBettingSlip(exchange, maxAttempts = 20, pollDelay = 500) {
     const selectors = BETTING_SLIP_SELECTORS[exchange];
     if (!selectors) {
@@ -2953,16 +3214,16 @@ function () {
           debugLogger.log('autoFill', 'Waiting for betting slip', { exchange, maxAttempts, pollDelay });
           const result = await waitForBettingSlip(exchange, maxAttempts, pollDelay);
           if (result && result.bettingSlip && result.stakeInput) {
-            // Validate odds haven't changed (Smarkets)
-            if (exchange === 'smarkets' && betData.odds) {
-              const oddsInputs = result.bettingSlip.querySelectorAll('input.box-input.numeric-value.input-value:not(.with-prefix):not([disabled])');
-              if (oddsInputs.length > 0) {
-                const currentOdds = parseFloat(oddsInputs[0].value);
+            // Validate odds haven't changed (all exchanges)
+            if (betData.odds) {
+              const oddsInput = findOddsInput(exchange, betData.isLay);
+              if (oddsInput && oddsInput.value) {
+                const currentOdds = parseFloat(oddsInput.value);
                 const expectedOdds = parseFloat(betData.odds);
-                if (Math.abs(currentOdds - expectedOdds) > 0.01) {
+                if (!isNaN(currentOdds) && !isNaN(expectedOdds) && Math.abs(currentOdds - expectedOdds) > 0.01) {
                   console.warn(`Surebet Helper: ⚠️ Odds changed! Expected ${expectedOdds.toFixed(2)}, found ${currentOdds.toFixed(2)}`);
-                  debugLogger.log('autoFill', 'Odds changed', { expected: expectedOdds, current: currentOdds }, 'warn');
-                  showToast(`⚠️ Odds changed! Expected ${expectedOdds.toFixed(2)}, now ${currentOdds.toFixed(2)}`, 'warning');
+                  debugLogger.log('autoFill', 'Odds changed', { expected: expectedOdds, current: currentOdds, exchange }, 'warn');
+                  showToast(`⚠️ Odds changed! Expected ${expectedOdds.toFixed(2)}, now ${currentOdds.toFixed(2)}`, 'warning', 3000);
                 }
               }
             }
@@ -3547,6 +3808,8 @@ function () {
     console.log('✅ Surebet Helper: Styles injected');
     await loadStakingSettings();
     console.log('✅ Surebet Helper: Staking settings loaded');
+    await loadMarketFilterSettings();
+    console.log('✅ Surebet Helper: Market filter settings loaded');
     // Panel removed - Kelly staking now in settings tab
     // injectStakePanel();
     // startStakePanelMonitoring();
@@ -3671,7 +3934,10 @@ function () {
     document.addEventListener('click', clickHandlers.surebetLink, true);
     
     // Initial injection with multiple retry attempts (for Surebet)
-    setTimeout(injectSaveButtons, 500);
+    setTimeout(() => {
+      injectSaveButtons();
+      applyMarketFilters();
+    }, 500);
     
     // Try injecting preset buttons multiple times with increasing delays
     setTimeout(injectPresetButtons, 800);
@@ -3747,7 +4013,10 @@ function () {
       });
       
       if (shouldInject && !isDisabled) {
-        setTimeout(injectSaveButtons, 100);
+        setTimeout(() => {
+          injectSaveButtons();
+          applyMarketFilters();
+        }, 100);
         // Reapply hide lay filter if active
         setTimeout(() => {
           if (isDisabled) return;

@@ -398,6 +398,208 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
+    // Export ALL bets as JSON
+    const exportJsonAllBtn = document.getElementById('export-json-all-btn');
+    if (exportJsonAllBtn) {
+      exportJsonAllBtn.addEventListener('click', () => {
+        api.storage.local.get({ bets: [], stakingSettings: {} }, (res) => {
+          const allBets = res.bets || [];
+          const stakingSettings = res.stakingSettings || {};
+          
+          if (allBets.length === 0) {
+            alert('ℹ️ No bets to export.');
+            return;
+          }
+          
+          // Ensure all bets have debugLogs field (for backward compatibility)
+          const betsWithLogs = allBets.map(bet => ({
+            ...bet,
+            debugLogs: bet.debugLogs || []
+          }));
+          
+          // Calculate analysis metrics
+          const tierStats = calculateLiquidityTierStats(betsWithLogs);
+          const bookmakerStats = calculateBookmakerStats(betsWithLogs);
+          const temporalStats = calculateTemporalStats(betsWithLogs);
+          const kellyStats = calculateKellyStats(betsWithLogs, stakingSettings);
+          
+          const exportData = {
+            exportDate: new Date().toISOString(),
+            bets: betsWithLogs,
+            analysis: {
+              liquidityTiers: tierStats,
+              bookmakerProfiling: bookmakerStats,
+              temporalAnalysis: temporalStats,
+              kellyFillRatios: kellyStats
+            }
+          };
+          
+          const dataStr = JSON.stringify(exportData, null, 2);
+          const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+          const filename = `surebet-bets-${timestamp}.json`;
+          
+          api.runtime.sendMessage({
+            action: 'export',
+            dataStr: dataStr,
+            filename: filename,
+            mime: 'application/json'
+          }, (resp) => {
+            if (resp && resp.success) {
+              console.log(`✅ Exported ${betsWithLogs.length} bet(s) with analysis`);
+              alert(`✅ Exported ${betsWithLogs.length} bet(s) to ${filename}`);
+            } else {
+              console.error('❌ Export failed:', resp?.error);
+              alert('❌ Export failed: ' + (resp?.error || 'Unknown error'));
+            }
+          });
+        });
+      });
+    }
+
+    // Export ALL bets as CSV
+    const exportCsvAllBtn = document.getElementById('export-csv-all-btn');
+    if (exportCsvAllBtn) {
+      exportCsvAllBtn.addEventListener('click', () => {
+        api.storage.local.get({ bets: [], commission: DEFAULT_COMMISSION_RATES, stakingSettings: {} }, (res) => {
+          const allBets = res.bets || [];
+          const commission = res.commission || DEFAULT_COMMISSION_RATES;
+          const stakingSettings = res.stakingSettings || {};
+          
+          if (allBets.length === 0) {
+            alert('ℹ️ No bets to export.');
+            return;
+          }
+          
+          // Build CSV header (27 columns matching popup.js)
+          const rows = [];
+          rows.push([
+            'timestamp', 'bookmaker', 'sport', 'event', 'tournament', 'market', 'is_lay',
+            'odds', 'probability', 'overvalue', 'stake', 'liability', 'commission_rate',
+            'commission_amount', 'potential_return', 'profit', 'expected_value', 'status',
+            'settled_at', 'actual_pl', 'note', 'url', 'limit', 'limit_tier',
+            'recommended_kelly_stake', 'fill_ratio_percent', 'hours_to_event'
+          ].join(','));
+          
+          for (const b of allBets) {
+            const esc = (v) => `\"${('' + (v ?? '')).replace(/\"/g, '\"\"')}\"`;
+            const commRate = getCommissionRate(b.bookmaker, commission);
+            
+            // Calculate profit and liability with commission
+            let profit = '';
+            let potential = '';
+            let commissionAmount = '';
+            let liability = '';
+            
+            if (b.stake && b.odds) {
+              if (b.isLay) {
+                const layOdds = b.originalLayOdds || b.odds;
+                liability = (parseFloat(b.stake) * (parseFloat(layOdds) - 1)).toFixed(2);
+                const grossProfit = parseFloat(b.stake);
+                const commAmt = commRate > 0 ? (grossProfit * commRate / 100) : 0;
+                const netProfit = grossProfit - commAmt;
+                profit = netProfit.toFixed(2);
+                potential = netProfit.toFixed(2);
+                commissionAmount = commAmt.toFixed(2);
+              } else {
+                const grossProfit = (parseFloat(b.stake) * parseFloat(b.odds)) - parseFloat(b.stake);
+                const commAmt = commRate > 0 ? (grossProfit * commRate / 100) : 0;
+                const netProfit = grossProfit - commAmt;
+                profit = netProfit.toFixed(2);
+                potential = (parseFloat(b.stake) + netProfit).toFixed(2);
+                commissionAmount = commAmt.toFixed(2);
+                liability = '0';
+              }
+            }
+            
+            // Calculate expected value
+            let expectedValue = '';
+            if (b.overvalue && b.stake) {
+              const ev = (parseFloat(b.overvalue) / 100) * parseFloat(b.stake);
+              expectedValue = ev.toFixed(2);
+            }
+            
+            // Calculate actual P/L
+            let actualPL = '';
+            if (b.stake && b.odds) {
+              if (b.status === 'won') {
+                actualPL = profit;
+              } else if (b.status === 'lost') {
+                actualPL = b.isLay ? '-' + liability : '-' + b.stake;
+              } else if (b.status === 'void') {
+                actualPL = '0';
+              }
+            }
+            
+            // Calculate liquidity metrics
+            const limitVal = parseFloat(b.limit) || '';
+            const limitTier = limitVal ? getLimitTier(limitVal) : '';
+            const recommendedKelly = calculateKellyStake(b, stakingSettings, commRate);
+            
+            let fillRatio = '';
+            if (recommendedKelly > 0) {
+              fillRatio = ((parseFloat(b.stake) / recommendedKelly) * 100).toFixed(2);
+            }
+            
+            let hoursToEvent = '';
+            if (b.eventTime && b.timestamp) {
+              const eventTime = new Date(b.eventTime);
+              const timestamp = new Date(b.timestamp);
+              hoursToEvent = ((eventTime - timestamp) / (1000 * 60 * 60)).toFixed(2);
+            }
+            
+            rows.push([
+              esc(b.timestamp),
+              esc(b.bookmaker),
+              esc(b.sport),
+              esc(b.event),
+              esc(b.tournament),
+              esc(b.market),
+              esc(b.isLay ? 'YES' : 'NO'),
+              esc(b.odds),
+              esc(b.probability),
+              esc(b.overvalue),
+              esc(b.stake),
+              esc(liability),
+              esc(commRate),
+              esc(commissionAmount),
+              esc(potential),
+              esc(profit),
+              esc(expectedValue),
+              esc(b.status || 'pending'),
+              esc(b.settledAt || ''),
+              esc(actualPL),
+              esc(b.note),
+              esc(b.url),
+              esc(limitVal),
+              esc(limitTier),
+              esc(recommendedKelly ? recommendedKelly.toFixed(2) : ''),
+              esc(fillRatio),
+              esc(hoursToEvent)
+            ].join(','));
+          }
+          
+          const dataStr = rows.join('\r\n');
+          const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+          const filename = `surebet-bets-${timestamp}.csv`;
+          
+          api.runtime.sendMessage({
+            action: 'export',
+            dataStr: dataStr,
+            filename: filename,
+            mime: 'text/csv'
+          }, (resp) => {
+            if (resp && resp.success) {
+              console.log(`✅ Exported ${allBets.length} bet(s) as CSV`);
+              alert(`✅ Exported ${allBets.length} bet(s) to ${filename}`);
+            } else {
+              console.error('❌ Export failed:', resp?.error);
+              alert('❌ Export failed: ' + (resp?.error || 'Unknown error'));
+            }
+          });
+        });
+      });
+    }
+
     // Clear all bets
     const clearAllBtn = document.getElementById('clear-all-btn');
     if (clearAllBtn) {
@@ -1068,4 +1270,402 @@ document.addEventListener('DOMContentLoaded', () => {
   if (window.location.hash === '#diagnostics') {
     renderRateLimits();
   }
+  
+  // ========== HELPER FUNCTIONS FOR EXPORT ==========
+  
+  function getCommissionRate(bookmaker, commissionSettings) {
+    const normalized = bookmaker?.toLowerCase() || '';
+    if (normalized.includes('betfair')) return commissionSettings.betfair || 5.0;
+    if (normalized.includes('betdaq')) return commissionSettings.betdaq || 2.0;
+    if (normalized.includes('matchbook')) return commissionSettings.matchbook || 1.0;
+    if (normalized.includes('smarkets')) return commissionSettings.smarkets || 2.0;
+    return 0;
+  }
+  
+  function getLimitTier(limit) {
+    if (limit >= 1000) return 'High (£1000+)';
+    if (limit >= 500) return 'Medium (£500-£999)';
+    if (limit >= 100) return 'Low (£100-£499)';
+    return 'Very Low (<£100)';
+  }
+  
+  function calculateKellyStake(bet, stakingSettings, commRate) {
+    if (!stakingSettings.bankroll || !bet.odds || !bet.probability) return 0;
+    
+    const bankroll = stakingSettings.effectiveBankroll || stakingSettings.bankroll || 1000;
+    const fraction = stakingSettings.fraction || 0.25;
+    const useCommission = stakingSettings.useCommission !== false;
+    
+    let odds = parseFloat(bet.odds);
+    if (useCommission && commRate > 0 && !bet.isLay) {
+      odds = 1 + ((odds - 1) * (1 - commRate / 100));
+    }
+    
+    const prob = parseFloat(bet.probability) / 100;
+    const q = 1 - prob;
+    const b = odds - 1;
+    
+    const kelly = (b * prob - q) / b;
+    if (kelly <= 0) return 0;
+    
+    let stake = bankroll * kelly * fraction;
+    
+    if (stakingSettings.maxBetPercent) {
+      const maxStake = bankroll * stakingSettings.maxBetPercent;
+      stake = Math.min(stake, maxStake);
+    }
+    
+    return stake;
+  }
+  
+  function calculateLiquidityTierStats(bets) {
+    const tiers = { high: 0, medium: 0, low: 0, veryLow: 0, unknown: 0 };
+    bets.forEach(b => {
+      const limit = parseFloat(b.limit);
+      if (!limit) {
+        tiers.unknown++;
+      } else if (limit >= 1000) {
+        tiers.high++;
+      } else if (limit >= 500) {
+        tiers.medium++;
+      } else if (limit >= 100) {
+        tiers.low++;
+      } else {
+        tiers.veryLow++;
+      }
+    });
+    return tiers;
+  }
+  
+  function calculateBookmakerStats(bets) {
+    const stats = {};
+    bets.forEach(b => {
+      if (!b.bookmaker) return;
+      if (!stats[b.bookmaker]) {
+        stats[b.bookmaker] = { count: 0, totalStake: 0, avgLimit: 0 };
+      }
+      stats[b.bookmaker].count++;
+      stats[b.bookmaker].totalStake += parseFloat(b.stake) || 0;
+      if (b.limit) {
+        stats[b.bookmaker].avgLimit = (stats[b.bookmaker].avgLimit * (stats[b.bookmaker].count - 1) + parseFloat(b.limit)) / stats[b.bookmaker].count;
+      }
+    });
+    return stats;
+  }
+  
+  function calculateTemporalStats(bets) {
+    const hourlyDistribution = Array(24).fill(0);
+    bets.forEach(b => {
+      if (b.timestamp) {
+        const hour = new Date(b.timestamp).getHours();
+        hourlyDistribution[hour]++;
+      }
+    });
+    return { hourlyDistribution };
+  }
+  
+  function calculateKellyStats(bets, stakingSettings) {
+    let totalBets = 0;
+    let settledBets = 0;
+    let exceedingKelly = 0;
+    let totalFillRatio = 0;
+    
+    bets.forEach(b => {
+      if (!b.stake || !stakingSettings.bankroll) return;
+      totalBets++;
+      
+      const recommendedKelly = calculateKellyStake(b, stakingSettings, 0);
+      if (recommendedKelly > 0) {
+        const fillRatio = parseFloat(b.stake) / recommendedKelly;
+        totalFillRatio += fillRatio;
+        if (fillRatio > 1) exceedingKelly++;
+      }
+      
+      if (b.status && b.status !== 'pending') settledBets++;
+    });
+    
+    return {
+      totalBets,
+      settledBets,
+      exceedingKelly,
+      exceedingKellyPercent: totalBets > 0 ? (exceedingKelly / totalBets * 100).toFixed(2) : 0,
+      avgFillRatio: totalBets > 0 ? (totalFillRatio / totalBets).toFixed(2) : 0
+    };
+  }
+
+  // Market Filter Settings
+  const DEFAULT_UI_PREFERENCES = {
+    marketFilterEnabled: false,
+    marketFilterMode: 'hide',
+    activePresets: []
+  };
+
+  function loadMarketFilterSettings() {
+    api.storage.local.get({ 
+      uiPreferences: DEFAULT_UI_PREFERENCES,
+      bets: []
+    }, (res) => {
+      const prefs = res.uiPreferences || DEFAULT_UI_PREFERENCES;
+      const bets = res.bets || [];
+      
+      // Set checkbox
+      const enabledCheckbox = document.getElementById('market-filter-enabled');
+      if (enabledCheckbox) {
+        enabledCheckbox.checked = prefs.marketFilterEnabled || false;
+      }
+      
+      // Set radio buttons
+      const hideRadio = document.getElementById('filter-mode-hide');
+      const highlightRadio = document.getElementById('filter-mode-highlight');
+      if (hideRadio && highlightRadio) {
+        if (prefs.marketFilterMode === 'highlight') {
+          highlightRadio.checked = true;
+        } else {
+          hideRadio.checked = true;
+        }
+      }
+      
+      // Calculate and display ROI for each preset
+      const presetIds = ['cards', 'asian_handicap', 'dnb', 'goals_only', 'corners_only'];
+      presetIds.forEach(presetId => {
+        const roiData = calculateMarketROI(bets, presetId);
+        const roiWarning = getROIWarningText(roiData);
+        
+        // Update the ROI text in the preset box
+        const roiSpan = document.getElementById(`roi-${presetId}`);
+        if (roiSpan) {
+          roiSpan.textContent = roiWarning.text;
+          roiSpan.style.color = roiWarning.color;
+        }
+      });
+      
+      // Set active preset boxes
+      const activePresets = prefs.activePresets || [];
+      document.querySelectorAll('.preset-box').forEach(box => {
+        const presetId = box.dataset.preset;
+        if (activePresets.includes(presetId)) {
+          box.classList.add('active');
+        } else {
+          box.classList.remove('active');
+        }
+      });
+      
+      console.log('🎯 Market filter settings loaded:', prefs);
+    });
+  }
+
+  function saveMarketFilterSettings() {
+    const enabledCheckbox = document.getElementById('market-filter-enabled');
+    const hideRadio = document.getElementById('filter-mode-hide');
+    const highlightRadio = document.getElementById('filter-mode-highlight');
+    
+    const activePresets = [];
+    document.querySelectorAll('.preset-box.active').forEach(box => {
+      activePresets.push(box.dataset.preset);
+    });
+    
+    const uiPreferences = {
+      marketFilterEnabled: enabledCheckbox ? enabledCheckbox.checked : false,
+      marketFilterMode: highlightRadio && highlightRadio.checked ? 'highlight' : 'hide',
+      activePresets: activePresets
+    };
+    
+    api.storage.local.set({ uiPreferences }, () => {
+      console.log('💾 Market filter settings saved:', uiPreferences);
+      // Show success message
+      const msg = document.createElement('div');
+      msg.style.cssText = 'position:fixed;top:20px;right:20px;background:#28a745;color:#fff;padding:15px 20px;border-radius:4px;z-index:9999;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,0.2)';
+      msg.textContent = '✓ Market filter settings saved!';
+      document.body.appendChild(msg);
+      setTimeout(() => msg.remove(), 2000);
+    });
+  }
+
+  // Market filter preset definitions (duplicated from popup.js)
+  const MARKET_FILTER_PRESETS = {
+    cards: {
+      name: '🚫 Cards/Bookings',
+      keywords: ['card', 'booking', 'yellow', 'red'],
+      type: 'block'
+    },
+    asian_handicap: {
+      name: '🚫 Asian Handicaps',
+      keywords: ['asian handicap', 'ah'],
+      type: 'block'
+    },
+    dnb: {
+      name: '🚫 Draw No Bet',
+      keywords: ['draw no bet', 'dnb'],
+      type: 'block'
+    },
+    goals_only: {
+      name: '✅ Goals Only',
+      keywords: ['goal', 'btts', 'over', 'under', 'total'],
+      type: 'whitelist'
+    },
+    corners_only: {
+      name: '✅ Corners Only',
+      keywords: ['corner'],
+      type: 'whitelist'
+    }
+  };
+
+  // Get commission for bookmaker (duplicated from popup.js)
+  function getCommission(bookmaker) {
+    if (!bookmaker) return 0;
+    const bookie = bookmaker.toLowerCase();
+    const commissionRates = {
+      betfair: 5.0,
+      betdaq: 2.0,
+      matchbook: 1.0,
+      smarkets: 2.0
+    };
+    if (bookie.includes('betfair')) return commissionRates.betfair || 0;
+    if (bookie.includes('betdaq')) return commissionRates.betdaq || 0;
+    if (bookie.includes('matchbook')) return commissionRates.matchbook || 0;
+    if (bookie.includes('smarkets')) return commissionRates.smarkets || 0;
+    return 0;
+  }
+
+  // Calculate actual ROI for each market preset from bet history
+  function calculateMarketROI(bets, presetId) {
+    const preset = MARKET_FILTER_PRESETS[presetId];
+    if (!preset) return null;
+    
+    // Build pattern parts - handle abbreviations like "AH" that may be followed by digits
+    const patternParts = preset.keywords.map(keyword => {
+      // If keyword is short (2-3 chars, likely abbreviation), use lookahead instead of word boundary at end
+      // This allows matching "AH1", "AH2", "DNB1" etc.
+      if (keyword.length <= 3 && /^[a-z]+$/i.test(keyword)) {
+        return `\\b${keyword}(?=\\d|\\(|\\s|$|-)`;
+      }
+      // For multi-word or longer keywords, use word boundaries
+      return `\\b${keyword}\\b`;
+    });
+    
+    const pattern = new RegExp(`(${patternParts.join('|')})`, 'i');
+    
+    const matchingBets = bets.filter(b => {
+      if (!b.market) return false;
+      if (!b.status || b.status === 'pending') return false;
+      
+      const marketLower = b.market.toLowerCase();
+      return pattern.test(marketLower);
+    });
+    
+    if (matchingBets.length === 0) {
+      return { roi: null, totalStaked: 0, profit: 0, betCount: 0 };
+    }
+    
+    let totalStaked = 0;
+    let totalProfit = 0;
+    
+    matchingBets.forEach(b => {
+      const stake = parseFloat(b.stake) || 0;
+      totalStaked += stake;
+      
+      if (b.actualPL !== undefined && b.actualPL !== null) {
+        totalProfit += b.actualPL;
+      } else {
+        const odds = parseFloat(b.odds) || 0;
+        const commission = getCommission(b.bookmaker);
+        
+        if (b.status === 'won') {
+          if (b.isLay) {
+            const gross = stake;
+            const commissionAmount = commission > 0 ? (gross * commission / 100) : 0;
+            totalProfit += (gross - commissionAmount);
+          } else {
+            const grossProfit = (stake * odds) - stake;
+            const commissionAmount = commission > 0 ? (grossProfit * commission / 100) : 0;
+            totalProfit += (grossProfit - commissionAmount);
+          }
+        } else if (b.status === 'lost') {
+          if (b.isLay) {
+            const layOdds = parseFloat(b.originalLayOdds) || odds;
+            totalProfit -= (stake * (layOdds - 1));
+          } else {
+            totalProfit -= stake;
+          }
+        }
+      }
+    });
+    
+    const roi = totalStaked > 0 ? ((totalProfit / totalStaked) * 100) : 0;
+    
+    return {
+      roi: roi,
+      totalStaked: totalStaked,
+      profit: totalProfit,
+      betCount: matchingBets.length
+    };
+  }
+
+  // Generate ROI warning text with color coding and low-data warning
+  function getROIWarningText(roiData) {
+    if (!roiData || roiData.roi === null || roiData.betCount === 0) {
+      return { 
+        text: 'No settled bets yet - filter still available', 
+        color: '#6c757d',
+        isLowData: true
+      };
+    }
+    
+    const betCount = roiData.betCount;
+    const roi = roiData.roi;
+    const roiStr = roi >= 0 ? `+${roi.toFixed(1)}%` : `${roi.toFixed(1)}%`;
+    const isLowData = betCount < 10;
+    
+    let text, color;
+    
+    if (isLowData) {
+      text = `ROI: ${roiStr} (${betCount} bets) ⚠️ Low data - use cautiously`;
+      color = '#ff9800';
+    } else if (roi >= 10) {
+      text = `ROI: ${roiStr} (${betCount} bets) ✓ Recommended`;
+      color = '#28a745';
+    } else if (roi >= 0) {
+      text = `ROI: ${roiStr} (${betCount} bets)`;
+      color = '#28a745';
+    } else if (roi >= -10) {
+      text = `ROI: ${roiStr} (${betCount} bets) ⚠️ Slightly negative`;
+      color = '#ffc107';
+    } else if (roi >= -30) {
+      text = `ROI: ${roiStr} (${betCount} bets) ⚠️ High risk`;
+      color = '#ff9800';
+    } else {
+      text = `ROI: ${roiStr} (${betCount} bets) ⚠️ Very high risk`;
+      color = '#dc3545';
+    }
+    
+    return { text, color, isLowData };
+  }
+
+  // Setup market filter event listeners
+  const marketFilterEnabled = document.getElementById('market-filter-enabled');
+  if (marketFilterEnabled) {
+    marketFilterEnabled.addEventListener('change', saveMarketFilterSettings);
+  }
+
+  const filterModeRadios = document.querySelectorAll('input[name="filter-mode"]');
+  filterModeRadios.forEach(radio => {
+    radio.addEventListener('change', saveMarketFilterSettings);
+  });
+
+  // Preset box click handlers
+  document.querySelectorAll('.preset-box').forEach(box => {
+    box.addEventListener('click', () => {
+      box.classList.toggle('active');
+      saveMarketFilterSettings();
+    });
+  });
+
+  // Load market filter settings when marketfilters section is shown
+  const originalShowSection = showSection;
+  showSection = function(sectionName) {
+    originalShowSection(sectionName);
+    if (sectionName === 'marketfilters') {
+      loadMarketFilterSettings();
+    }
+  };
 });

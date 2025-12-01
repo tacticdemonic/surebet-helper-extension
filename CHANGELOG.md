@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### ✨ New Features
+- **On-site Market Filtering**: Added the ability to hide or highlight specific market types directly on the surebet.com valuebets page. Presets include Asian Handicap, DNB, Cards, Goals Only, and Corners Only. Supports Hide & Highlight modes and mirrors popup settings.
+
+### 🐛 Bug Fixes
+- **Asian Handicap matching**: Improved regex compilation to detect abbreviations like `AH`, `AH1`, `AH2` and variations like `AH2(+1.5)` by using a lookahead. Added content-script-level filtering and highlight badge for easier identification.
+
+
 ## [1.0.82.2] - 2025-11-28
 
 ### 📝 Documentation & Housekeeping

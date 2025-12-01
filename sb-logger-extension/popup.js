@@ -27,7 +27,10 @@ const DEFAULT_ROUNDING_SETTINGS = {
 
 const DEFAULT_UI_PREFERENCES = {
   hideLayBets: false,
-  showPendingOnly: false
+  showPendingOnly: false,
+  marketFilterEnabled: false,
+  marketFilterMode: 'hide', // 'hide' or 'highlight'
+  activePresets: [] // Array of active preset IDs: ['cards', 'asian_handicap', 'dnb', 'goals_only', 'corners_only']
 };
 
 const DEFAULT_AUTOFILL_SETTINGS = {
@@ -47,6 +50,146 @@ const DEFAULT_ACTIONS_SETTINGS = {
   skipOddsPrompt: false,
   skipMarketPrompt: false
 };
+
+// Market filter presets with plain-language keywords
+const MARKET_FILTER_PRESETS = {
+  cards: {
+    name: '🚫 Cards/Bookings',
+    keywords: ['card', 'booking', 'yellow', 'red'],
+    type: 'block'
+  },
+  asian_handicap: {
+    name: '🚫 Asian Handicaps',
+    keywords: ['asian handicap', 'ah'],
+    type: 'block'
+  },
+  dnb: {
+    name: '🚫 Draw No Bet',
+    keywords: ['draw no bet', 'dnb'],
+    type: 'block'
+  },
+  goals_only: {
+    name: '✅ Goals Only',
+    keywords: ['goal', 'btts', 'over', 'under', 'total'],
+    type: 'whitelist'
+  },
+  corners_only: {
+    name: '✅ Corners Only',
+    keywords: ['corner'],
+    type: 'whitelist'
+  }
+};
+
+// Compiled regex patterns cache (populated on load)
+let COMPILED_MARKET_PATTERNS = {};
+
+// Calculate actual ROI for each market preset from bet history
+function calculateMarketROI(bets, presetId) {
+  const preset = MARKET_FILTER_PRESETS[presetId];
+  if (!preset) return null;
+  
+  // Compile pattern for this preset
+  const pattern = new RegExp(`\\b(${preset.keywords.join('|')})\\b`, 'i');
+  
+  // Filter bets that match this market type and are settled
+  const matchingBets = bets.filter(b => {
+    if (!b.market) return false;
+    if (!b.status || b.status === 'pending') return false; // Only settled bets
+    
+    const marketLower = b.market.toLowerCase();
+    return pattern.test(marketLower);
+  });
+  
+  if (matchingBets.length === 0) {
+    return { roi: null, totalStaked: 0, profit: 0, betCount: 0 };
+  }
+  
+  // Calculate total staked and profit/loss
+  let totalStaked = 0;
+  let totalProfit = 0;
+  
+  matchingBets.forEach(b => {
+    const stake = parseFloat(b.stake) || 0;
+    totalStaked += stake;
+    
+    // Use actualPL if available, otherwise calculate
+    if (b.actualPL !== undefined && b.actualPL !== null) {
+      totalProfit += b.actualPL;
+    } else {
+      const odds = parseFloat(b.odds) || 0;
+      const commission = getCommission(b.bookmaker);
+      
+      if (b.status === 'won') {
+        if (b.isLay) {
+          const gross = stake;
+          const commissionAmount = commission > 0 ? (gross * commission / 100) : 0;
+          totalProfit += (gross - commissionAmount);
+        } else {
+          const grossProfit = (stake * odds) - stake;
+          const commissionAmount = commission > 0 ? (grossProfit * commission / 100) : 0;
+          totalProfit += (grossProfit - commissionAmount);
+        }
+      } else if (b.status === 'lost') {
+        if (b.isLay) {
+          const layOdds = parseFloat(b.originalLayOdds) || odds;
+          totalProfit -= (stake * (layOdds - 1));
+        } else {
+          totalProfit -= stake;
+        }
+      }
+      // void bets contribute 0 to profit
+    }
+  });
+  
+  const roi = totalStaked > 0 ? ((totalProfit / totalStaked) * 100) : 0;
+  
+  return {
+    roi: roi,
+    totalStaked: totalStaked,
+    profit: totalProfit,
+    betCount: matchingBets.length
+  };
+}
+
+// Generate ROI warning text with color coding and low-data warning
+function getROIWarningText(roiData) {
+  if (!roiData || roiData.roi === null || roiData.betCount === 0) {
+    return { 
+      text: 'No settled bets yet - filter still available', 
+      color: '#6c757d',
+      isLowData: true
+    };
+  }
+  
+  const betCount = roiData.betCount;
+  const roi = roiData.roi;
+  const roiStr = roi >= 0 ? `+${roi.toFixed(1)}%` : `${roi.toFixed(1)}%`;
+  const isLowData = betCount < 10; // Less than 10 bets = low data
+  
+  let text, color;
+  
+  if (isLowData) {
+    text = `ROI: ${roiStr} (${betCount} bets) ⚠️ Low data - use cautiously`;
+    color = '#ff9800';
+  } else if (roi >= 10) {
+    text = `ROI: ${roiStr} (${betCount} bets) ✓ Recommended`;
+    color = '#28a745';
+  } else if (roi >= 0) {
+    text = `ROI: ${roiStr} (${betCount} bets)`;
+    color = '#28a745';
+  } else if (roi >= -10) {
+    text = `ROI: ${roiStr} (${betCount} bets) ⚠️ Slightly negative`;
+    color = '#ffc107';
+  } else if (roi >= -30) {
+    text = `ROI: ${roiStr} (${betCount} bets) ⚠️ High risk`;
+    color = '#ff9800';
+  } else {
+    text = `ROI: ${roiStr} (${betCount} bets) ⚠️ Very high risk`;
+    color = '#dc3545';
+  }
+  
+  return { text, color, isLowData };
+}
 
 let commissionRates = { ...DEFAULT_COMMISSION_RATES };
 let roundingSettings = { ...DEFAULT_ROUNDING_SETTINGS };
@@ -101,6 +244,39 @@ function loadCommissionRates(callback) {
   });
 }
 
+function compileMarketPatterns(activePresets) {
+  console.log('🔨 Compiling market filter patterns for presets:', activePresets);
+  COMPILED_MARKET_PATTERNS = {};
+  
+  activePresets.forEach(presetId => {
+    const preset = MARKET_FILTER_PRESETS[presetId];
+    if (!preset) {
+      console.warn('⚠️ Unknown preset ID:', presetId);
+      return;
+    }
+    
+    // Build pattern parts - handle abbreviations like "AH" that may be followed by digits
+    const patternParts = preset.keywords.map(keyword => {
+      // If keyword is short (2-3 chars, likely abbreviation), use lookahead instead of word boundary at end
+      // This allows matching "AH1", "AH2", "DNB1" etc.
+      if (keyword.length <= 3 && /^[a-z]+$/i.test(keyword)) {
+        return `\\b${keyword}(?=\\d|\\(|\\s|$|-)`;
+      }
+      // For multi-word or longer keywords, use word boundaries
+      return `\\b${keyword}\\b`;
+    });
+    
+    const pattern = new RegExp(`(${patternParts.join('|')})`, 'i');
+    COMPILED_MARKET_PATTERNS[presetId] = {
+      pattern: pattern,
+      type: preset.type,
+      name: preset.name
+    };
+  });
+  
+  console.log('✅ Compiled patterns:', Object.keys(COMPILED_MARKET_PATTERNS));
+}
+
 function loadDefaultActionsSettings(callback) {
   api.storage.local.get({ defaultActionsSettings: DEFAULT_ACTIONS_SETTINGS }, (res) => {
     defaultActionsSettings = { ...res.defaultActionsSettings };
@@ -139,6 +315,12 @@ function loadUIPreferences(callback) {
     
     if (document.getElementById('show-pending-only')) {
       document.getElementById('show-pending-only').checked = uiPreferences.showPendingOnly || false;
+    }
+    
+    // Compile patterns for active presets
+    const activePresets = uiPreferences.activePresets || [];
+    if (activePresets.length > 0) {
+      compileMarketPatterns(activePresets);
     }
     
     if (callback) callback();
@@ -903,6 +1085,69 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ===== END LIQUIDITY ANALYSIS FUNCTIONS =====
 
+  function isMarketFiltered(market) {
+    if (!uiPreferences.marketFilterEnabled) {
+      console.log('🔍 [Filter] Market filter disabled');
+      return false;
+    }
+    if (!market) return false;
+    
+    const activePresets = uiPreferences.activePresets || [];
+    if (activePresets.length === 0) {
+      console.log('🔍 [Filter] No active presets');
+      return false;
+    }
+    
+    console.log('🔍 [Filter] Checking market:', market, 'Active presets:', activePresets);
+    
+    // Check if any whitelist presets are active (goals_only, corners_only)
+    const whitelistPresets = activePresets.filter(id => {
+      const compiled = COMPILED_MARKET_PATTERNS[id];
+      return compiled && compiled.type === 'whitelist';
+    });
+    
+    const blacklistPresets = activePresets.filter(id => {
+      const compiled = COMPILED_MARKET_PATTERNS[id];
+      return compiled && compiled.type === 'block';
+    });
+    
+    const marketLower = market.toLowerCase();
+    
+    // Whitelist-first logic: if any whitelist preset is active, only show whitelisted markets
+    if (whitelistPresets.length > 0) {
+      // Check if market matches ANY whitelist pattern
+      const matchesWhitelist = whitelistPresets.some(id => {
+        const compiled = COMPILED_MARKET_PATTERNS[id];
+        return compiled && compiled.pattern.test(marketLower);
+      });
+      
+      // If no whitelist match, filter it out
+      if (!matchesWhitelist) {
+        return true; // Market is filtered (blocked)
+      }
+      
+      // Market matches whitelist - don't apply blacklist filters
+      return false;
+    }
+    
+    // No whitelists active - apply blacklist filters
+    if (blacklistPresets.length > 0) {
+      const matchesBlacklist = blacklistPresets.some(id => {
+        const compiled = COMPILED_MARKET_PATTERNS[id];
+        const isMatch = compiled && compiled.pattern.test(marketLower);
+        if (compiled) {
+          console.log(`🔍 [Filter] Testing "${market}" against ${id} pattern:`, compiled.pattern, 'Match:', isMatch);
+        }
+        return isMatch;
+      });
+      
+      console.log(`🔍 [Filter] Final result for "${market}":`, matchesBlacklist ? 'BLOCKED' : 'ALLOWED');
+      return matchesBlacklist; // True if matches any blacklist pattern
+    }
+    
+    return false;
+  }
+
   function render(bets, sortBy = 'saved-desc', hideLayBets = false, showPendingOnly = false) {
     console.log('🎨 Rendering', bets.length, 'bets, sortBy:', sortBy, 'hideLayBets:', hideLayBets, 'showPendingOnly:', showPendingOnly);
 
@@ -936,6 +1181,30 @@ document.addEventListener('DOMContentLoaded', () => {
         container.innerHTML = '<div class="small">No pending bets to display. Uncheck "Pending Only" to see all bets.</div>';
         return;
       }
+    }
+
+    // Apply market filter (hide or mark for highlighting)
+    let marketFilteredCount = 0;
+    const marketFilterMode = uiPreferences.marketFilterMode || 'hide';
+    
+    if (uiPreferences.marketFilterEnabled && (uiPreferences.activePresets || []).length > 0) {
+      console.log('🎯 Market filter active:', {
+        mode: marketFilterMode,
+        presets: uiPreferences.activePresets
+      });
+      
+      if (marketFilterMode === 'hide') {
+        // Hide filtered bets completely
+        const beforeFilter = filteredBets.length;
+        filteredBets = filteredBets.filter(b => !isMarketFiltered(b.market));
+        marketFilteredCount = beforeFilter - filteredBets.length;
+        
+        if (filteredBets.length === 0) {
+          container.innerHTML = '<div class="small">No bets to display (all filtered by market type). Adjust your market filters to see more bets.</div>';
+          return;
+        }
+      }
+      // For 'highlight' mode, we'll add CSS class during rendering
     }
 
     // Sort bets
@@ -1168,7 +1437,7 @@ document.addEventListener('DOMContentLoaded', () => {
         eventTimeDisplay = `<div class="small" style="${passedStyle};margin-top:2px">🕒 ${eventTimeStr}${eventPassed && b.status === 'pending' ? ' ⚠️' : ''}</div>`;
       }
 
-      return `<tr data-bet-id="${betKey}" style="${eventPassed && b.status === 'pending' ? 'background:#fff3cd' : ''}">
+      return `<tr data-bet-id="${betKey}" style="${eventPassed && b.status === 'pending' ? 'background:#fff3cd' : ''}" class="${uiPreferences.marketFilterEnabled && marketFilterMode === 'highlight' && isMarketFiltered(b.market) ? 'market-blocked' : ''}">
         <td style="width:110px">
           <div class="small">${ts}</div>
           ${b.event && b.event.includes('Galatasaray') ? `<div class="small" style="color:#dc3545;font-weight:600">ID: ${betKey}</div>` : ''}
@@ -1182,7 +1451,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <td>
           <div style="font-weight:600">${escapeHtml(b.event || 'Unknown Event')}</div>
           <div class="small">${escapeHtml(b.tournament || '')}</div>
-          <div class="note">${escapeHtml(b.market || '')}</div>
+          <div class="note">${escapeHtml(b.market || '')}${uiPreferences.marketFilterEnabled && marketFilterMode === 'highlight' && isMarketFiltered(b.market) ? ' <span style="color:#dc3545;font-weight:600">⚠️ Filtered</span>' : ''}</div>
           <div style="margin-top:4px">
             ${b.isLay ? '<span class="badge" style="background:#6f42c1;color:#fff;font-size:10px;padding:2px 6px;margin-right:4px;font-weight:700">LAY</span>' : ''}
             ${limitTierBg ? `<span class="badge" style="background:${limitTierBg};color:#fff;font-size:10px;padding:2px 6px;margin-right:4px;font-weight:700" title="Liquidity Tier">${limitTierEmoji} ${limitTier}</span>` : ''}
@@ -1228,12 +1497,17 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       return betStatus === 'won' || betStatus === 'lost' || betStatus === 'void';
     }).length;
+    
+    const filterSummary = hiddenCount > 0 || marketFilteredCount > 0
+      ? ` (${hiddenCount > 0 ? hiddenCount + ' hidden' : ''}${hiddenCount > 0 && marketFilteredCount > 0 ? ', ' : ''}${marketFilteredCount > 0 ? marketFilteredCount + ' market filtered' : ''})`
+      : '';
+    
     const summary = `
       <div style="background:#f8f9fa;padding:8px;margin-bottom:8px;border-radius:4px;font-size:12px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
           <div>
             <strong>Total Staked:</strong> ${totalStaked.toFixed(2)} | 
-            <strong>Settled:</strong> ${filteredSettledBets}/${filteredBets.length}${hiddenCount > 0 ? ` (${hiddenCount} hidden)` : ''} | 
+            <strong>Settled:</strong> ${filteredSettledBets}/${filteredBets.length}${filterSummary} | 
             <strong>Total EV:</strong> <span style="color:${totalEvColor};font-weight:600">${totalEV >= 0 ? '+' : ''}${totalEV.toFixed(2)} <span style="font-size:11px">(${evRoi >= 0 ? '+' : ''}${evRoi}%)</span></span>
           </div>
           <div style="font-size:14px;font-weight:700;color:${roiColor}">
@@ -1280,6 +1554,36 @@ document.addEventListener('DOMContentLoaded', () => {
         // Ensure status is trimmed and lowercase
         bet.status = status.trim().toLowerCase();
         bet.settledAt = new Date().toISOString();
+        
+        // Calculate and store actualPL for settled bets
+        if (bet.status === 'won' || bet.status === 'lost' || bet.status === 'void') {
+          const stake = parseFloat(bet.stake) || 0;
+          const odds = parseFloat(bet.odds) || 0;
+          const commission = getCommission(bet.bookmaker);
+          
+          if (bet.status === 'won') {
+            if (bet.isLay) {
+              const gross = stake;
+              const commissionAmount = commission > 0 ? (gross * commission / 100) : 0;
+              bet.actualPL = gross - commissionAmount;
+            } else {
+              const grossProfit = (stake * odds) - stake;
+              const commissionAmount = commission > 0 ? (grossProfit * commission / 100) : 0;
+              bet.actualPL = grossProfit - commissionAmount;
+            }
+          } else if (bet.status === 'lost') {
+            if (bet.isLay) {
+              const layOdds = parseFloat(bet.originalLayOdds) || odds;
+              bet.actualPL = -(stake * (layOdds - 1));
+            } else {
+              bet.actualPL = -stake;
+            }
+          } else if (bet.status === 'void') {
+            bet.actualPL = 0;
+          }
+          console.log('💰 Calculated actualPL:', bet.actualPL, 'for status:', bet.status);
+        }
+        
         console.log('Updating bet status to:', bet.status, '(was:', oldStatus, ')');
         api.storage.local.set({ bets }, () => {
           requestBankrollRecalc();
@@ -1294,6 +1598,7 @@ document.addEventListener('DOMContentLoaded', () => {
               event: verifiedBet?.event,
               status: verifiedBet?.status,
               settledAt: verifiedBet?.settledAt,
+              actualPL: verifiedBet?.actualPL,
               betKey: verifiedBet ? getBetKey(verifiedBet) : undefined
             });
             console.log('🔄 Reloading UI...');
@@ -1486,6 +1791,37 @@ document.addEventListener('DOMContentLoaded', () => {
         if (b.market && /lay/i.test(b.market) && b.isLay === undefined) {
           console.log('🧹 Backfilling isLay for', b.event);
           b.isLay = true;
+          needsCleanup = true;
+        }
+        
+        // Migration: Backfill missing actualPL for settled bets
+        if ((b.status === 'won' || b.status === 'lost' || b.status === 'void') && 
+            (b.actualPL === undefined || b.actualPL === null)) {
+          const stake = parseFloat(b.stake) || 0;
+          const odds = parseFloat(b.odds) || 0;
+          const commission = getCommission(b.bookmaker);
+          
+          if (b.status === 'won') {
+            if (b.isLay) {
+              const gross = stake;
+              const commissionAmount = commission > 0 ? (gross * commission / 100) : 0;
+              b.actualPL = gross - commissionAmount;
+            } else {
+              const grossProfit = (stake * odds) - stake;
+              const commissionAmount = commission > 0 ? (grossProfit * commission / 100) : 0;
+              b.actualPL = grossProfit - commissionAmount;
+            }
+          } else if (b.status === 'lost') {
+            if (b.isLay) {
+              const layOdds = parseFloat(b.originalLayOdds) || odds;
+              b.actualPL = -(stake * (layOdds - 1));
+            } else {
+              b.actualPL = -stake;
+            }
+          } else if (b.status === 'void') {
+            b.actualPL = 0;
+          }
+          console.log('🧹 Backfilled actualPL:', b.actualPL.toFixed(2), 'for', b.event, '(', b.status, ')');
           needsCleanup = true;
         }
 
