@@ -2268,13 +2268,18 @@ function () {
   }
 
   function applyMarketFilters() {
-    if (!marketFilterSettings.enabled) {
-      console.log('📋 [ContentScript] Market filters disabled, skipping');
-      return;
-    }
-    
     const mainTable = document.querySelector('table');
     if (!mainTable) return;
+    
+    if (!marketFilterSettings.enabled) {
+      console.log('📋 [ContentScript] Market filters disabled, clearing all filter classes');
+      // Clear any previously applied filter classes
+      const rows = mainTable.querySelectorAll('tbody.valuebet_record');
+      rows.forEach(row => {
+        row.classList.remove('surebet-helper-market-filtered', 'surebet-helper-market-blocked');
+      });
+      return;
+    }
     
     const rows = mainTable.querySelectorAll('tbody.valuebet_record');
     let filteredCount = 0;

@@ -1203,8 +1203,10 @@ document.addEventListener('DOMContentLoaded', () => {
           container.innerHTML = '<div class="small">No bets to display (all filtered by market type). Adjust your market filters to see more bets.</div>';
           return;
         }
+      } else {
+        // Count how many will be highlighted
+        marketFilteredCount = filteredBets.filter(b => isMarketFiltered(b.market)).length;
       }
-      // For 'highlight' mode, we'll add CSS class during rendering
     }
 
     // Sort bets

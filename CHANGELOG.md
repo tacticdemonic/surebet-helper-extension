@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🐛 Bug Fixes
 - **Asian Handicap matching**: Improved regex compilation to detect abbreviations like `AH`, `AH1`, `AH2` and variations like `AH2(+1.5)` by using a lookahead. Added content-script-level filtering and highlight badge for easier identification.
+- **Market filter toggle regression**: Fixed issue where disabling market filters wouldn't remove existing filter styling from rows until page reload. Filters now properly clear classes when disabled.
+- **Settings preservation bug**: Fixed critical bug in `settings.js` where saving market filter settings would overwrite and discard other UI preferences like `hideLayBets` and `showPendingOnly`. Now properly merges with existing settings.
+- **Highlight mode counter**: Fixed `marketFilteredCount` not incrementing in highlight mode, so the summary line now correctly reports the number of highlighted rows.
 
 
 ## [1.0.82.2] - 2025-11-28

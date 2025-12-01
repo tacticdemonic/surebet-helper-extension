@@ -1464,20 +1464,24 @@ document.addEventListener('DOMContentLoaded', () => {
       activePresets.push(box.dataset.preset);
     });
     
-    const uiPreferences = {
-      marketFilterEnabled: enabledCheckbox ? enabledCheckbox.checked : false,
-      marketFilterMode: highlightRadio && highlightRadio.checked ? 'highlight' : 'hide',
-      activePresets: activePresets
-    };
-    
-    api.storage.local.set({ uiPreferences }, () => {
-      console.log('💾 Market filter settings saved:', uiPreferences);
+    // Read existing uiPreferences to preserve other settings
+    api.storage.local.get({ uiPreferences: {} }, (res) => {
+      const updatedPreferences = {
+        ...res.uiPreferences,
+        marketFilterEnabled: enabledCheckbox ? enabledCheckbox.checked : false,
+        marketFilterMode: highlightRadio && highlightRadio.checked ? 'highlight' : 'hide',
+        activePresets: activePresets
+      };
+      
+      api.storage.local.set({ uiPreferences: updatedPreferences }, () => {
+      console.log('💾 Market filter settings saved:', updatedPreferences);
       // Show success message
       const msg = document.createElement('div');
       msg.style.cssText = 'position:fixed;top:20px;right:20px;background:#28a745;color:#fff;padding:15px 20px;border-radius:4px;z-index:9999;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,0.2)';
       msg.textContent = '✓ Market filter settings saved!';
       document.body.appendChild(msg);
       setTimeout(() => msg.remove(), 2000);
+      });
     });
   }
 
