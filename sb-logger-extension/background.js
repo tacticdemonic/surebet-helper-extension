@@ -1473,21 +1473,25 @@ async function fetchClvFromApi(bets, clvSettings) {
       if (!sport || !['football', 'basketball', 'tennis', 'hockey', 'american football', 'baseball', 'volleyball'].includes(sport)) {
         console.warn(`📈 CLV: Unknown/missing sport "${bet.sport}" for bet ${getBetKey(bet) || bet.id}, using 'football' fallback`);
       }
+      // Build payload that matches the API model expected by the server
+      // API expects: betId, sport, homeTeam, awayTeam, market, eventDate, bookmaker
       return {
-        bet_id: getBetKey(bet) || bet.id,
-        event: bet.event,
+        betId: String(getBetKey(bet) || bet.id || ''),
         sport: sport || 'football',
-        tournament: bet.tournament || '',
-        bookmaker: bet.bookmaker,
+        homeTeam: extractHomeTeam(bet) || '',
+        awayTeam: extractAwayTeam(bet) || '',
         market: bet.market || 'Match Odds',
-        selection: extractSelection(bet),
+        eventDate: extractEventDate(bet),
+        bookmaker: bet.bookmaker || '',
+        // optional debugging fields (not required by the server, but helpful)
         opening_odds: parseFloat(bet.odds) || 0,
-        event_date: extractEventDate(bet),
-        home_team: extractHomeTeam(bet),
-        away_team: extractAwayTeam(bet)
+        selection: extractSelection(bet),
+        rawEvent: bet.event || ''
       };
     });
     
+    // Log minimal request payload for debugging (no PII)
+    console.log('📈 CLV batch request:', betRequests.map(b => ({ betId: b.betId, sport: b.sport, eventDate: b.eventDate })));
     // Create AbortController for timeout
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -1510,9 +1514,16 @@ async function fetchClvFromApi(bets, clvSettings) {
     clearTimeout(timeoutId);
     
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error('📈 CLV API error:', response.status, errorText);
-      return { success: false, error: `API returned ${response.status}` };
+      let errorText = await response.text();
+      let parsed = null;
+      try {
+        parsed = JSON.parse(errorText);
+      } catch (e) {
+        // ignore
+      }
+      const message = parsed?.detail || parsed?.message || parsed?.error || errorText || `HTTP ${response.status}`;
+      console.error('📈 CLV API error:', response.status, message, parsed || errorText);
+      return { success: false, error: `API returned ${response.status}: ${message}` };
     }
     
     const data = await response.json();
