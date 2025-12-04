@@ -1527,9 +1527,13 @@ async function fetchClvFromApi(bets, clvSettings) {
     }
     
     const data = await response.json();
+    console.log('📈 CLV API response:', { jobId: data.job_id, processed: data.processed, failed: data.failed, resultsCount: data.results?.length || 0 });
     
     // Process results and calculate CLV
     const results = [];
+    let failedCount = 0;
+    let errorReasons = new Set();
+    
     for (const result of data.results || []) {
       if (result.success && result.closing_odds) {
         const bet = bets.find(b => (getBetKey(b) || b.id) === result.bet_id);
@@ -1546,15 +1550,30 @@ async function fetchClvFromApi(bets, clvSettings) {
             bookmakerMatched: result.bookmaker_matched || false
           });
         }
+      } else {
+        failedCount++;
+        if (result.error) {
+          errorReasons.add(result.error);
+        }
       }
     }
     
+    // Build error message if no results found
+    let errorMsg = null;
+    if (results.length === 0 && bets.length > 0) {
+      const reasons = Array.from(errorReasons).slice(0, 3).join('; ');
+      errorMsg = reasons 
+        ? `No closing odds found: ${reasons}` 
+        : 'No closing odds found - events may not be in OddsPortal database';
+    }
+    
     return { 
-      success: true, 
+      success: results.length > 0,
       results,
       jobId: data.job_id,
       processed: data.processed || 0,
-      failed: data.failed || 0
+      failed: failedCount || data.failed || 0,
+      error: errorMsg
     };
   } catch (err) {
     // Handle abort (timeout) specifically
