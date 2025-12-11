@@ -37,11 +37,8 @@ const DEFAULT_ACTIONS_SETTINGS = {
 
 const DEFAULT_CLV_SETTINGS = {
   enabled: false,
-  apiUrl: 'http://localhost:8765',
   delayHours: 2,
-  fallbackStrategy: 'pinnacle',  // 'pinnacle' | 'weighted_avg' | 'none'
   maxRetries: 3,
-  maxConcurrency: 3,
   batchCheckIntervalHours: 4
 };
 
@@ -80,6 +77,8 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   function showSection(sectionName) {
+    console.log('⚙️ showSection called with:', sectionName);
+    
     document.querySelectorAll('.section-container').forEach(el => {
       el.classList.remove('active');
     });
@@ -88,11 +87,16 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     const activeSection = document.getElementById(`${sectionName}-section`);
+    console.log('⚙️ Found section element:', activeSection);
     if (activeSection) {
       activeSection.classList.add('active');
+      console.log('⚙️ Activated section:', sectionName);
+    } else {
+      console.warn('⚠️ Section not found:', `${sectionName}-section`);
     }
 
     const activeBtn = document.querySelector(`.nav-btn[data-section="${sectionName}"]`);
+    console.log('⚙️ Found button element:', activeBtn);
     if (activeBtn) {
       activeBtn.classList.add('active');
     }
@@ -149,23 +153,17 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('api-odds-key').placeholder = 'API key already configured';
       }
 
-      // Load CLV settings
+      // Load CLV settings (CSV-based, simplified)
       const clvSettings = res.clvSettings || DEFAULT_CLV_SETTINGS;
       const clvEnabled = document.getElementById('clv-enabled');
-      const clvApiUrl = document.getElementById('clv-api-url');
-      const clvDelayHours = document.getElementById('clv-delay-hours');
-      const clvFallbackStrategy = document.getElementById('clv-fallback-strategy');
-      const clvMaxRetries = document.getElementById('clv-max-retries');
-      const clvMaxConcurrency = document.getElementById('clv-max-concurrency');
-      const clvBatchInterval = document.getElementById('clv-batch-check-interval');
       
       if (clvEnabled) clvEnabled.checked = clvSettings.enabled || false;
-      if (clvApiUrl) clvApiUrl.value = clvSettings.apiUrl || 'http://localhost:8765';
-      if (clvDelayHours) clvDelayHours.value = clvSettings.delayHours || 2;
-      if (clvFallbackStrategy) clvFallbackStrategy.value = clvSettings.fallbackStrategy || 'pinnacle';
-      if (clvMaxRetries) clvMaxRetries.value = clvSettings.maxRetries || 3;
-      if (clvMaxConcurrency) clvMaxConcurrency.value = clvSettings.maxConcurrency || 3;
-      if (clvBatchInterval) clvBatchInterval.value = clvSettings.batchCheckIntervalHours || 4;
+      
+      // Load Props Polling settings
+      const propsSettings = res.propsPollingSettings || { enabled: false };
+      const propsEnabled = document.getElementById('props-polling-enabled');
+      
+      if (propsEnabled) propsEnabled.checked = propsSettings.enabled || false;
 
       if (callback) callback();
     });
@@ -379,6 +377,199 @@ document.addEventListener('DOMContentLoaded', () => {
         });
       });
     });
+
+    // CLV Settings Save (CSV-based)
+    const saveClvBtn = document.getElementById('save-clv-btn');
+    if (saveClvBtn) {
+      saveClvBtn.addEventListener('click', () => {
+        const enabled = document.getElementById('clv-enabled').checked;
+        
+        const newSettings = {
+          enabled: enabled,
+          delayHours: 2,
+          maxRetries: 3,
+          batchCheckIntervalHours: 4
+        };
+        
+        console.log('💾 Saving CLV settings:', newSettings);
+        api.storage.local.set({ clvSettings: newSettings }, () => {
+          console.log('✅ CLV settings saved');
+          
+          // Update CLV batch check schedule with new settings
+          api.runtime.sendMessage({
+            action: 'updateClvSchedule',
+            intervalHours: newSettings.batchCheckIntervalHours
+          });
+          
+          alert('✅ CLV tracking settings saved successfully!');
+        });
+      });
+    }
+
+    // Clear CSV Cache
+    const clearCsvCacheBtn = document.getElementById('clear-csv-cache-btn');
+    if (clearCsvCacheBtn) {
+      clearCsvCacheBtn.addEventListener('click', async () => {
+        const statusEl = document.getElementById('clear-csv-cache-status');
+        statusEl.textContent = 'Clearing...';
+        statusEl.style.color = '#007bff';
+        
+        // Clear all CSV caches from storage
+        api.storage.local.get(null, (allData) => {
+          const cacheKeys = Object.keys(allData).filter(key => key.startsWith('csv_cache_'));
+          
+          if (cacheKeys.length === 0) {
+            statusEl.textContent = 'No caches to clear';
+            statusEl.style.color = '#6c757d';
+            setTimeout(() => statusEl.textContent = '', 3000);
+            return;
+          }
+          
+          api.storage.local.remove(cacheKeys, () => {
+            console.log(`[CSV CLV] 💾 Cleared ${cacheKeys.length} CSV caches`);
+            statusEl.textContent = `✅ Cleared ${cacheKeys.length} cache(s)`;
+            statusEl.style.color = '#28a745';
+            setTimeout(() => statusEl.textContent = '', 3000);
+          });
+        });
+      });
+    }
+    
+    // Force CLV Check
+    const forceClvCheckBtn = document.getElementById('force-clv-check-btn');
+    if (forceClvCheckBtn) {
+      forceClvCheckBtn.addEventListener('click', async () => {
+        forceClvCheckBtn.disabled = true;
+        forceClvCheckBtn.textContent = '⏳ Checking...';
+        
+        const resultDiv = document.getElementById('force-clv-result');
+        if (resultDiv) {
+          resultDiv.style.display = 'inline';
+          resultDiv.innerHTML = '<span style="color: #666;">🔄 Fetching CLV data...</span>';
+        }
+        
+        try {
+          console.log('📈 [Settings] Sending forceClvCheck message...');
+          const response = await new Promise((resolve, reject) => {
+            api.runtime.sendMessage({ action: 'forceClvCheck' }, (resp) => {
+              if (api.runtime.lastError) {
+                reject(new Error(api.runtime.lastError.message));
+                return;
+              }
+              if (resp === undefined) {
+                reject(new Error('No response from background script'));
+                return;
+              }
+              resolve(resp);
+            });
+          });
+          
+          console.log('📈 [Settings] Force CLV check response:', response);
+          
+          if (response?.success) {
+            const msg = response.updated > 0 
+              ? `✅ Success! Checked ${response.checked} bet(s), updated ${response.updated} with CLV data.`
+              : `ℹ️ Checked ${response.checked} bet(s), no new CLV data found.`;
+            if (resultDiv) {
+              resultDiv.innerHTML = `<span style="color: ${response.updated > 0 ? '#28a745' : '#666'};">${msg}</span>`;
+            }
+            alert(msg);
+          } else {
+            // Friendly message for unsupported leagues
+            const errorMsg = response?.error === 'league_not_supported'
+              ? `ℹ️ These bets are from leagues not covered by CSV data (e.g., cups, international competitions)`
+              : `❌ CLV check failed: ${response?.error || 'Unknown error'}`;
+            const color = response?.error === 'league_not_supported' ? '#666' : '#dc3545';
+            if (resultDiv) {
+              resultDiv.innerHTML = `<span style="color: ${color};">${errorMsg}</span>`;
+            }
+            alert(errorMsg);
+          }
+        } catch (err) {
+          const errorMsg = `❌ Error: ${err.message}`;
+          if (resultDiv) {
+            resultDiv.innerHTML = `<span style="color: #dc3545;">${errorMsg}</span>`;
+          }
+          alert(errorMsg);
+        }
+        
+        forceClvCheckBtn.disabled = false;
+        forceClvCheckBtn.textContent = '⚡ Force Check Now';
+      });
+    }
+    
+    // Save Props Polling Settings
+    const savePropsBtn = document.getElementById('save-props-btn');
+    if (savePropsBtn) {
+      savePropsBtn.addEventListener('click', () => {
+        const enabled = document.getElementById('props-polling-enabled')?.checked || false;
+        
+        const newSettings = { enabled };
+        
+        console.log('💾 Saving props polling settings:', newSettings);
+        api.storage.local.set({ propsPollingSettings: newSettings }, () => {
+          console.log('✅ Props polling settings saved');
+          alert('✅ Props polling settings saved successfully!');
+          
+          // Notify background to update polling schedule
+          api.runtime.sendMessage({ 
+            action: 'updatePropsPollingSchedule', 
+            enabled: enabled 
+          });
+        });
+      });
+    }
+
+    // Export config for CLV server
+    const exportConfigBtn = document.getElementById('export-config-btn');
+    if (exportConfigBtn) {
+      exportConfigBtn.addEventListener('click', () => {
+        api.storage.local.get({ apiKeys: {} }, (res) => {
+          const apiKeys = res.apiKeys || {};
+          
+          if (!apiKeys.apiOddsKey) {
+            alert('⚠️ The Odds API key is not configured. Please save your API key first.');
+            return;
+          }
+          
+          // Create config object
+          const config = {
+            THE_ODDS_API_KEY: apiKeys.apiOddsKey,
+            exported_at: new Date().toISOString(),
+            extension_version: api.runtime.getManifest().version
+          };
+          
+          const dataStr = JSON.stringify(config, null, 2);
+          const filename = 'config.json';
+          
+          // Export via chrome.downloads
+          api.runtime.sendMessage({
+            action: 'export',
+            dataStr: dataStr,
+            filename: filename,
+            mime: 'application/json'
+          }, (resp) => {
+            if (resp && resp.success) {
+              console.log('✅ Config exported successfully');
+              
+              // Show success message with instructions
+              const sharedPath = navigator.platform.toLowerCase().includes('win') 
+                ? '%LOCALAPPDATA%\\SurebetHelper\\config.json'
+                : '~/.surebethelper/config.json';
+              
+              alert(
+                `✅ Config file downloaded!\n\n` +
+                `📁 Move the downloaded file to:\n${sharedPath}\n\n` +
+                `🔄 Then restart the CLV server to use the new configuration.`
+              );
+            } else {
+              console.error('❌ Config export failed:', resp?.error);
+              alert('❌ Export failed: ' + (resp?.error || 'Unknown error'));
+            }
+          });
+        });
+      });
+    }
 
     // Export pending bets (debug)
     const exportPendingBtn = document.getElementById('export-pending-btn');
@@ -663,120 +854,57 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
-    // ========== CLV TRACKING SETTINGS ==========
-    
-    // Save CLV settings
-    const saveClvBtn = document.getElementById('save-clv-btn');
-    if (saveClvBtn) {
-      saveClvBtn.addEventListener('click', async () => {
-        // Prevent double-clicks
-        if (saveClvBtn.disabled) return;
-        saveClvBtn.disabled = true;
-        const originalText = saveClvBtn.textContent;
-        saveClvBtn.textContent = '💾 Saving...';
+    // Force Player Props Poll button
+    const forcePropsPollBtn = document.getElementById('props-force-poll-btn');
+    if (forcePropsPollBtn) {
+      forcePropsPollBtn.addEventListener('click', async () => {
+        forcePropsPollBtn.disabled = true;
+        forcePropsPollBtn.textContent = '⏳ Polling...';
         
-        const newSettings = {
-          enabled: document.getElementById('clv-enabled')?.checked || false,
-          apiUrl: document.getElementById('clv-api-url')?.value || 'http://localhost:8765',
-          delayHours: parseInt(document.getElementById('clv-delay-hours')?.value) || 2,
-          fallbackStrategy: document.getElementById('clv-fallback-strategy')?.value || 'pinnacle',
-          maxRetries: parseInt(document.getElementById('clv-max-retries')?.value) || 3,
-          maxConcurrency: parseInt(document.getElementById('clv-max-concurrency')?.value) || 3,
-          batchCheckIntervalHours: parseInt(document.getElementById('clv-batch-check-interval')?.value) || 4
-        };
-        
-        console.log('💾 Saving CLV settings:', newSettings);
+        const resultDiv = document.getElementById('props-force-poll-result');
+        if (resultDiv) {
+          resultDiv.style.display = 'block';
+          resultDiv.innerHTML = '<span style="color: #666;">🔄 Fetching current odds for player props...</span>';
+        }
         
         try {
-          await new Promise((resolve, reject) => {
-            api.storage.local.set({ clvSettings: newSettings }, () => {
+          console.log('🎯 [PROPS UI] Sending forcePropsPoll message...');
+          const response = await new Promise((resolve, reject) => {
+            api.runtime.sendMessage({ action: 'forcePropsPoll' }, (resp) => {
+              console.log('🎯 [PROPS UI] Raw response:', resp);
+              
+              // Check for runtime errors
               if (api.runtime.lastError) {
-                reject(api.runtime.lastError);
-              } else {
-                resolve();
+                console.error('🎯 [PROPS UI] Runtime error:', api.runtime.lastError);
+                reject(new Error(api.runtime.lastError.message));
+                return;
               }
+              
+              if (resp === undefined) {
+                console.error('🎯 [PROPS UI] Response is undefined - background script may not be responding');
+                reject(new Error('No response from background script'));
+                return;
+              }
+              
+              resolve(resp);
             });
           });
           
-          console.log('✅ CLV settings saved');
-          alert('✅ CLV tracking settings saved successfully!');
-          
-          // Notify background to update CLV alarm interval
-          api.runtime.sendMessage({ 
-            action: 'updateClvSchedule', 
-            intervalHours: newSettings.batchCheckIntervalHours 
-          });
-        } catch (err) {
-          console.error('❌ Failed to save CLV settings:', err);
-          alert('❌ Failed to save settings: ' + err.message);
-        } finally {
-          saveClvBtn.disabled = false;
-          saveClvBtn.textContent = originalText;
-        }
-      });
-    }
-    
-    // Test CLV API connection
-    const testClvBtn = document.getElementById('clv-test-connection-btn');
-    if (testClvBtn) {
-      testClvBtn.addEventListener('click', async () => {
-        testClvBtn.disabled = true;
-        testClvBtn.textContent = '🔄 Testing...';
-        
-        const apiUrl = document.getElementById('clv-api-url')?.value || 'http://localhost:8765';
-        
-        try {
-          const response = await fetch(`${apiUrl}/health`, {
-            method: 'GET',
-            headers: { 'Accept': 'application/json' }
-          });
-          
-          if (response.ok) {
-            const data = await response.json();
-            updateClvConnectionStatus(true, data);
-            alert(`✅ CLV API connected!\n\nStatus: ${data.status}\nHarvester: ${data.harvester_available ? 'Available' : 'Not found'}`);
-          } else {
-            updateClvConnectionStatus(false);
-            alert(`❌ CLV API responded with error: ${response.status}`);
-          }
-        } catch (err) {
-          updateClvConnectionStatus(false);
-          alert(`❌ CLV API connection failed.\n\n${err.message}\n\nMake sure the OddsHarvester API is running.`);
-        }
-        
-        testClvBtn.disabled = false;
-        testClvBtn.textContent = '🔌 Test Connection';
-      });
-    }
-    
-    // Force CLV Check button
-    const forceClvCheckBtn = document.getElementById('clv-force-check-btn');
-    if (forceClvCheckBtn) {
-      forceClvCheckBtn.addEventListener('click', async () => {
-        forceClvCheckBtn.disabled = true;
-        forceClvCheckBtn.textContent = '⏳ Checking...';
-        
-        const resultDiv = document.getElementById('clv-force-check-result');
-        if (resultDiv) {
-          resultDiv.style.display = 'block';
-          resultDiv.innerHTML = '<span style="color: #666;">🔄 Fetching CLV data for settled bets...</span>';
-        }
-        
-        try {
-          const response = await new Promise((resolve) => {
-            api.runtime.sendMessage({ action: 'forceClvCheck' }, resolve);
-          });
+          console.log('🎯 [PROPS UI] Processed response:', response);
           
           if (response?.success) {
             const msg = response.updated > 0 
-              ? `✅ Success! Checked ${response.checked} bet(s), updated ${response.updated} with CLV data.`
-              : `ℹ️ Checked ${response.checked} bet(s), no new CLV data found. ${response.message || ''}`;
+              ? `✅ Success! Updated ${response.updated} of ${response.total} pending player prop bet(s).`
+              : `ℹ️ ${response.message || 'No pending player prop bets to poll.'}`;
             if (resultDiv) {
               resultDiv.innerHTML = `<span style="color: ${response.updated > 0 ? '#28a745' : '#666'};">${msg}</span>`;
             }
             alert(msg);
+            
+            // Refresh API usage stats
+            updatePropsApiUsage();
           } else {
-            const errorMsg = `❌ CLV check failed: ${response?.error || 'Unknown error'}`;
+            const errorMsg = `❌ Props poll failed: ${response?.error || 'Unknown error'}`;
             if (resultDiv) {
               resultDiv.innerHTML = `<span style="color: #dc3545;">${errorMsg}</span>`;
             }
@@ -790,10 +918,32 @@ document.addEventListener('DOMContentLoaded', () => {
           alert(errorMsg);
         }
         
-        forceClvCheckBtn.disabled = false;
-        forceClvCheckBtn.textContent = '⚡ Force Check Now';
+        forcePropsPollBtn.disabled = false;
+        forcePropsPollBtn.textContent = '⚡ Force Poll Now';
       });
     }
+    
+    // Helper function to update props API usage display
+    async function updatePropsApiUsage() {
+      const usageDiv = document.getElementById('props-api-usage');
+      if (!usageDiv) return;
+      
+      try {
+        const data = await new Promise((resolve) => {
+          api.storage.local.get({ propApiUsage: {} }, resolve);
+        });
+        
+        const usage = data.propApiUsage;
+        if (usage && usage.monthlyUsed !== undefined) {
+          usageDiv.textContent = `Monthly: ${usage.monthlyUsed} / 500 | Daily: ${usage.dailyUsed || 0} / 16 | Manual: ${usage.manualUsed || 0} / 50`;
+        }
+      } catch (err) {
+        console.error('Failed to update props API usage:', err);
+      }
+    }
+    
+    // Initial load of props API usage
+    updatePropsApiUsage();
     
     // Clear CLV cache
     const clearClvCacheBtn = document.getElementById('clv-clear-cache-btn');
@@ -806,7 +956,7 @@ document.addEventListener('DOMContentLoaded', () => {
         clearClvCacheBtn.disabled = true;
         clearClvCacheBtn.textContent = '🔄 Clearing...';
         
-        const apiUrl = document.getElementById('clv-api-url')?.value || 'http://localhost:8765';
+        const apiUrl = document.getElementById('clv-api-url')?.value || 'http://127.0.0.1:8765';
         
         try {
           const response = await fetch(`${apiUrl}/api/clear-cache`, {
@@ -843,7 +993,7 @@ document.addEventListener('DOMContentLoaded', () => {
         checkUpdatesBtn.disabled = true;
         checkUpdatesBtn.textContent = '🔄 Checking...';
         
-        const apiUrl = document.getElementById('clv-api-url')?.value || 'http://localhost:8765';
+        const apiUrl = document.getElementById('clv-api-url')?.value || 'http://127.0.0.1:8765';
         const updateStatus = document.getElementById('clv-update-status');
         
         try {
@@ -929,8 +1079,8 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   
   async function checkClvConnection() {
-    const apiUrl = document.getElementById('clv-api-url')?.value || 'http://localhost:8765';
-    
+    const apiUrl = document.getElementById('clv-api-url')?.value || 'http://127.0.0.1:8765';
+
     try {
       const response = await fetch(`${apiUrl}/health`, {
         method: 'GET',
@@ -950,7 +1100,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   
   async function refreshClvCacheStats() {
-    const apiUrl = document.getElementById('clv-api-url')?.value || 'http://localhost:8765';
+    const apiUrl = document.getElementById('clv-api-url')?.value || 'http://127.0.0.1:8765';
     const dbSizeEl = document.getElementById('clv-db-size');
     const cacheStatsEl = document.getElementById('clv-cache-stats');
     

@@ -54,8 +54,8 @@ const DEFAULT_ACTIONS_SETTINGS = {
 const DEFAULT_CLV_SETTINGS = {
   enabled: false,
   maxRetries: 3,
-  delayHours: 6,
-  fallbackStrategy: 'pinnacle'
+  delayHours: 2,
+  batchCheckIntervalHours: 4
 };
 
 // Cached CLV settings for renderClvBadge()
@@ -66,11 +66,6 @@ const MARKET_FILTER_PRESETS = {
   cards: {
     name: '🚫 Cards/Bookings',
     keywords: ['card', 'booking', 'yellow', 'red'],
-    type: 'block'
-  },
-  asian_handicap: {
-    name: '🚫 Asian Handicaps',
-    keywords: ['asian handicap', 'ah'],
     type: 'block'
   },
   dnb: {
@@ -92,6 +87,16 @@ const MARKET_FILTER_PRESETS = {
     name: '🚫 Correct Score',
     keywords: ['correct score', 'exact score'],
     type: 'block'
+  },
+  btts: {
+    name: '🚫 BTTS',
+    keywords: ['btts', 'both teams to score'],
+    type: 'block'
+  },
+  clv_available: {
+    name: '✅ CLV Available',
+    keywords: ['home', 'draw', 'away', '1x2', 'match odds', 'over 2.5', 'under 2.5', 'o/u', 'asian handicap', 'ah', 'handicap'],
+    type: 'whitelist'
   },
   goals_only: {
     name: '✅ Goals Only',
@@ -1564,7 +1569,8 @@ document.addEventListener('DOMContentLoaded', () => {
   function renderClvBadge(bet, betKey) {
     // Only show CLV for settled bets
     if (!['won', 'lost'].includes(bet.status)) {
-      return '';
+      // For pending bets, show line movement badge if available
+      return renderLineMovementBadge(bet);
     }
     
     // Don't show CLV UI if tracking is disabled (unless bet already has CLV data)
@@ -1578,14 +1584,31 @@ document.addEventListener('DOMContentLoaded', () => {
       const clv = parseFloat(bet.clv);
       const clvColor = clv >= 0 ? '#28a745' : '#dc3545';
       const clvSign = clv >= 0 ? '+' : '';
-      const sourceLabel = bet.clvSource === 'manual' ? '✏️' : (bet.clvSource === 'pinnacle' ? '📌' : '🤖');
+      
+      // Source indicator (using text instead of emoji for cross-browser compatibility)
+      const sourceLabel = bet.clvSource === 'csv' ? '[CSV]' : 
+                         bet.clvSource === 'manual' ? '[Manual]' : '[API]';
+      
       const closingOdds = bet.closingOdds ? parseFloat(bet.closingOdds).toFixed(2) : '?';
+      
+      // Build tooltip with match details if available (CSV-specific)
+      let tooltip = `Opening: ${bet.odds} → Closing: ${closingOdds}\nSource: ${bet.clvSource || 'unknown'}`;
+      if (bet.csvMatch) {
+        tooltip += `\nMatched: ${bet.csvMatch.homeTeam} vs ${bet.csvMatch.awayTeam}`;
+        if (bet.csvConfidence) {
+          tooltip += `\nConfidence: ${(bet.csvConfidence * 100).toFixed(1)}%`;
+        }
+      }
 
-      return ` | <strong>CLV:</strong> <span style="color:${clvColor};font-weight:600" title="Opening: ${bet.odds} → Closing: ${closingOdds}\nSource: ${bet.clvSource || 'unknown'}">${clvSign}${clv.toFixed(2)}% ${sourceLabel}</span>`;
+      return ` | <strong>CLV:</strong> <span style="color:${clvColor};font-weight:600" title="${tooltip}">${sourceLabel} ${clvSign}${clv.toFixed(2)}%</span>`;
+    }
+
+    // Check sport type - only football supported for CSV
+    if (bet.sport && bet.sport !== 'Football') {
+      return ` | <span style="color:#6c757d;font-size:10px;padding:2px 6px;background:#f8f9fa;border-radius:3px" title="CLV tracking only available for Football bets">CLV: N/A (${bet.sport})</span>`;
     }
 
     // Check if CLV fetch failed (exceeded retries)
-    // Use bet's retry count vs settings maxRetries; fallback to 3 if settings not loaded
     const maxRetries = cachedClvSettings?.maxRetries ?? DEFAULT_CLV_SETTINGS.maxRetries;
     const retryCount = bet.clvRetryCount || 0;
     if (retryCount >= maxRetries) {
@@ -1593,8 +1616,54 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // CLV is pending - show retry progress
-    const retryInfo = retryCount > 0 ? ` (${retryCount}/${maxRetries})` : '';
-    return ` | <span style="color:#6c757d;font-size:10px" title="CLV will be fetched automatically${retryInfo}">📈 CLV: Pending...${retryInfo}</span>`;
+    const retryInfo = retryCount > 0 ? ` (retry ${retryCount}/${maxRetries})` : '';
+    return ` | <span style="color:#6c757d;font-size:10px" title="CLV will be fetched automatically${retryInfo}">📈 CLV: Pending${retryInfo}</span>`;
+  }
+
+  function renderLineMovementBadge(bet) {
+    // Only show for pending player prop bets with line movement data
+    if (bet.status !== 'pending') {
+      return '';
+    }
+    
+    // Check if this looks like a player prop bet
+    const propKeywords = ['points', 'rebounds', 'assists', 'threes', 'pass', 'rush', 'reception', 
+                          'strikeout', 'hits', 'home run', 'rbi', 'shots', 'blocked'];
+    const eventLower = (bet.event || '').toLowerCase();
+    const marketLower = (bet.market || '').toLowerCase();
+    const noteLower = (bet.note || '').toLowerCase();
+    
+    const isPlayerProp = propKeywords.some(keyword => 
+      eventLower.includes(keyword) || 
+      marketLower.includes(keyword) || 
+      noteLower.includes(keyword)
+    );
+    
+    if (!isPlayerProp) {
+      return '';
+    }
+    
+    // Check if line movement data exists
+    if (bet.lineMovement !== undefined && bet.lineMovement !== null) {
+      const movement = parseFloat(bet.lineMovement);
+      
+      // Only show badge if movement >= 5%
+      if (Math.abs(movement) < 5.0) {
+        return '';
+      }
+      
+      const movementColor = movement >= 0 ? '#28a745' : '#dc3545';
+      const movementSign = movement >= 0 ? '+' : '';
+      const arrow = movement >= 0 ? '📈' : '📉';
+      const openingOdds = bet.openingOdds ? parseFloat(bet.openingOdds).toFixed(2) : bet.odds;
+      const currentOdds = bet.currentOdds ? parseFloat(bet.currentOdds).toFixed(2) : '?';
+      const lastPolled = bet.lastPolled ? new Date(bet.lastPolled).toLocaleString() : 'Never';
+      
+      return ` | <strong>Line Movement:</strong> <span style="color:${movementColor};font-weight:600" title="Opening: ${openingOdds} → Current: ${currentOdds}\nLast polled: ${lastPolled}">${arrow} ${movementSign}${movement.toFixed(1)}%</span>`;
+    }
+    
+    // Pending poll
+    return ` | <span style="color:#6c757d;font-size:10px" title="Line movement tracking (polled 3x daily)">📊 Tracking...</span>`;
   }
 
   function escapeHtml(s) {

@@ -11,6 +11,16 @@ This guide explains how to set up Closing Line Value (CLV) tracking for SB Logge
 
 Professional bettors typically aim for consistent positive CLV, as it correlates strongly with long-term profitability.
 
+### Market Support
+
+CLV tracking uses **FREE** Pinnacle closing odds from **football-data.co.uk** for:
+- ✅ **1X2 Match Odds** (Home/Draw/Away)
+- ✅ **Over/Under 2.5 Goals**
+- ✅ **Asian Handicap** (all lines)
+- ✅ **22 European football leagues** (see full list below)
+- ❌ **Non-football sports** - not currently supported
+- ❌ **Exotic markets** (BTTS, Correct Score, Props, etc.) - not available in CSV data
+
 ---
 
 ## Prerequisites
@@ -278,18 +288,147 @@ You can create a Windows Task to auto-start the API:
 
 ---
 
-## Supported Sports
+## Supported Sports & Markets
 
-OddsHarvester supports:
-- ⚽ Football (Soccer)
-- 🏀 Basketball
-- 🎾 Tennis
-- 🏒 Hockey
-- 🏈 American Football
-- ⚾ Baseball
-- 🏐 Volleyball
+### Football (Soccer) - CSV-Based CLV ✅
+**FREE** Pinnacle closing odds from **football-data.co.uk** for 22 European leagues:
 
-CLV accuracy is highest for major leagues with good OddsPortal coverage.
+**Supported Markets:**
+- ✅ **1X2 / Match Odds** (Home, Draw, Away)
+- ✅ **Over/Under 2.5 Goals**
+- ✅ **Asian Handicap** (all handicap lines)
+
+**Supported Leagues:**
+- England: Premier League, Championship
+- Spain: La Liga, La Liga 2
+- Germany: Bundesliga, 2. Bundesliga
+- Italy: Serie A, Serie B
+- France: Ligue 1, Ligue 2
+- Netherlands: Eredivisie
+- Belgium: First Division A
+- Portugal: Primeira Liga
+- Scotland: Premiership
+- Turkey: Super Lig
+- Greece: Super League
+
+**NOT Supported:**
+- ❌ Player props, BTTS, Correct Score, Cards, Corners, Shots
+- ❌ Non-football sports (basketball, tennis, etc.)
+
+CLV accuracy is highest for leagues with consistent Pinnacle data coverage.
+
+---
+
+## Player Props: Line Movement Tracking
+
+### Overview
+
+**Player prop bets** (points, rebounds, assists, strikeouts, etc.) use a different tracking system than game odds:
+
+- **Game Odds CLV**: Automatic via OddsHarvester (compares your odds to Pinnacle closing line)
+- **Player Props**: **Line Movement Tracking** via The Odds API (tracks odds changes from opening to current)
+
+### Why Not True CLV for Props?
+
+Player prop closing odds are not available from free data sources:
+- OddsPortal doesn't archive player prop historical data
+- The Odds API free tier only provides current/upcoming odds, not historical closing lines
+- Paid services like OddsJam ($50-100/month) would be required for true prop CLV
+
+### How Line Movement Works
+
+1. **Opening Odds Capture**: When you save a player prop bet, the extension stores your bet odds as the "opening line"
+2. **Automatic Polling**: 3 times daily (8am, 2pm, 8pm local time), the extension polls The Odds API for current odds
+3. **Movement Calculation**: `Line Movement % = ((Current Odds - Opening Odds) / Opening Odds) * 100`
+4. **Badge Display**: If movement ≥ 5%, a badge appears: `📈 +7.3%` (line moved in your favor) or `📉 -4.2%` (line moved against you)
+
+### Setup Player Props Polling
+
+#### Prerequisites
+
+1. **The Odds API Key**: Free tier provides 500 requests/month
+   - Sign up at https://the-odds-api.com
+   - Get your free API key
+   - Add it to extension settings under "API Keys"
+
+2. **Enable Polling**: 
+   - Open Settings → CLV section
+   - Toggle "Enable Player Props Polling" to ON
+
+#### Rate Limit Management
+
+The extension intelligently manages The Odds API's free tier limits:
+
+| Budget | Allocation |
+|--------|------------|
+| **Monthly** | 500 requests total |
+| **Daily (Automatic)** | 16 requests (450/month for auto-polling) |
+| **Manual Reserve** | 50 requests (reserved for force-checks) |
+
+**Priority Queue**: 
+- NBA/NFL props polled first (Sep-Jun season)
+- Then MLB/NHL (Apr-Oct season)
+- College sports lowest priority
+- FIFO within same sport
+
+#### Force Manual Poll
+
+To poll immediately (uses manual reserve):
+1. Open Settings → CLV section
+2. Click **⚡ Force Poll Now** under "Player Props"
+3. Current usage stats displayed: `Monthly: 23/500 | Daily: 4/16 | Manual: 2/50`
+
+### Interpreting Line Movement
+
+**Positive Movement (+)**:
+- Your odds increased (favorable)
+- Example: Bet at 1.90, current line 2.05 → `📈 +7.9%`
+- Interpretation: Market moved in your direction (sharp money on opposite side, or market inefficiency)
+
+**Negative Movement (-):**
+- Your odds decreased (unfavorable)
+- Example: Bet at 2.10, current line 1.98 → `📉 -5.7%`
+- Interpretation: Market moved against you (public money on your side, or you may have beaten closing)
+
+**No Badge (<5% movement):**
+- Line movement below display threshold
+- Small movements are normal market noise
+
+### Differences from Game Odds CLV
+
+| Feature | Game Odds CLV | Player Props |
+|---------|---------------|--------------|
+| **Data Source** | OddsHarvester → OddsPortal | The Odds API |
+| **Closing Line** | Actual Pinnacle closing odds | Approximation (last poll before game) |
+| **Accuracy** | High (true CLV) | Medium (movement indicator) |
+| **Historical Data** | Yes (years of data) | Building (3-6 months → true CLV) |
+| **Cost** | Free | Free (500/month limit) |
+
+### Future: Automatic Prop CLV
+
+After **3-6 months** of polling, the extension will have enough historical data to calculate true closing line approximations:
+
+1. **Database Build**: Current polling system stores all snapshots
+2. **Closing Line Detection**: Last snapshot before game start = pseudo-closing line
+3. **Automatic CLV**: Once database mature, props will show true CLV like game odds
+
+**Timeline**: If you start polling today (Dec 2025), expect automatic prop CLV by March-June 2026.
+
+### Troubleshooting
+
+**"Monthly API quota exhausted"**
+- You've used all 500 requests this month
+- Reset occurs on 1st of each month
+- Consider upgrading The Odds API plan if needed ($10/month for 10,000 requests)
+
+**"No pending player prop bets to poll"**
+- Extension only polls bets with prop keywords (points, rebounds, assists, etc.)
+- Check that your bet's event/market/note contains prop indicators
+
+**"Line movement not updating"**
+- Polling occurs at 8am/2pm/8pm local time (not real-time)
+- Force manual poll if you need immediate update
+- Check API key is configured correctly
 
 ---
 

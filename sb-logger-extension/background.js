@@ -1,5 +1,9 @@
 // Background script handles export/download requests and automatic result checking
 // Compatible with MV2 background pages used by Firefox signing
+// NOTE: CSV CLV service modules (footballDataLeagues.js, csvClvService.js, fuzzyMatcher.js)
+// are loaded via manifest.json background.scripts array (loaded before this file)
+
+console.log('🚀 [BACKGROUND] Script loading started...');
 
 let ApiServiceClass = null;
 let apiServiceReady = null;
@@ -417,11 +421,31 @@ chrome.runtime.onInstalled.addListener(() => {
     chrome.alarms.create('clvBatchCheck', { periodInMinutes: intervalHours * 60 });
     console.log(`⏰ CLV alarm created: clvBatchCheck (every ${intervalHours} hours)`);
   });
+  
+  // Initialize player props polling if enabled (with delay to ensure all scripts loaded)
+  if (typeof initializePropPolling === 'function') {
+    setTimeout(() => {
+      initializePropPolling().catch(err => {
+        console.error('❌ Error initializing prop polling:', err);
+      });
+    }, 1000); // 1 second delay
+  } else {
+    console.warn('⚠️ initializePropPolling function not available');
+  }
 });
 
 if (chrome.runtime.onStartup) {
   chrome.runtime.onStartup.addListener(() => {
     syncToggleUiState();
+    
+    // Initialize player props polling on startup if enabled
+    if (typeof initializePropPolling === 'function') {
+      setTimeout(() => {
+        initializePropPolling().catch(err => {
+          console.error('❌ Error initializing prop polling on startup:', err);
+        });
+      }, 1000); // 1 second delay
+    }
   });
 }
 
@@ -446,6 +470,16 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   
   if (alarm.name === 'clvBatchCheck') {
     autoFetchClv();
+  }
+  
+  // Player props polling alarms
+  if (alarm.name.startsWith('prop-polling-')) {
+    console.log(`🎯 Prop polling alarm triggered: ${alarm.name}`);
+    if (typeof pollPlayerProps === 'function') {
+      pollPlayerProps(false).catch(err => {
+        console.error('❌ Prop polling error:', err);
+      });
+    }
   }
 });
 
@@ -957,6 +991,34 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   
+  // Update player props polling schedule
+  if (message.action === 'updatePropsPollingSchedule') {
+    const enabled = message.enabled;
+    console.log('🎯 Updating props polling schedule, enabled:', enabled);
+    
+    if (enabled) {
+      // Initialize/restart polling
+      if (typeof initializePropPolling === 'function') {
+        initializePropPolling().then(() => {
+          sendResponse({ success: true });
+        }).catch(err => {
+          console.error('❌ Error initializing prop polling:', err);
+          sendResponse({ success: false, error: err.message });
+        });
+      } else {
+        sendResponse({ success: false, error: 'Prop polling not available' });
+      }
+    } else {
+      // Clear all prop polling alarms
+      chrome.alarms.clear('prop-polling-8am');
+      chrome.alarms.clear('prop-polling-2pm');
+      chrome.alarms.clear('prop-polling-8pm');
+      console.log('⏰ Props polling alarms cleared');
+      sendResponse({ success: true });
+    }
+    return true;
+  }
+  
   // Force immediate CLV check for all eligible bets (ignores delay)
   if (message.action === 'forceClvCheck') {
     console.log('📈 Force CLV check triggered');
@@ -970,20 +1032,8 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
           return;
         }
         
-        // Check API availability with timeout
-        try {
-          const healthController = new AbortController();
-          const healthTimeout = setTimeout(() => healthController.abort(), 5000);
-          const healthResponse = await fetch(`${clvSettings.apiUrl}/health`, { signal: healthController.signal });
-          clearTimeout(healthTimeout);
-          if (!healthResponse.ok) {
-            sendResponse({ success: false, error: 'CLV API not responding', checked: 0 });
-            return;
-          }
-        } catch (err) {
-          sendResponse({ success: false, error: 'CLV API not reachable: ' + (err.name === 'AbortError' ? 'timeout' : err.message), checked: 0 });
-          return;
-        }
+        // CSV service is always available - no API health check needed
+        console.log('📈 [CSV CLV] Using CSV-based CLV (no API required)');
         
         // Get ALL settled bets without CLV (ignore delay and retry count for force)
         const storage = await new Promise((resolve) => {
@@ -1075,6 +1125,28 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
     })();
     return true;
+  }
+  
+  // Force immediate player props poll
+  if (message.action === 'forcePropsPoll') {
+    console.log('🎯 Force props poll triggered');
+    
+    (async () => {
+      try {
+        if (typeof forceManualPoll !== 'function') {
+          sendResponse({ success: false, error: 'Prop poller not available' });
+          return;
+        }
+        
+        const result = await forceManualPoll();
+        sendResponse(result);
+      } catch (error) {
+        console.error('❌ Force props poll error:', error);
+        sendResponse({ success: false, error: error.message });
+      }
+    })();
+    
+    return true; // Async response
   }
   
   // Trigger manual CLV fetch for a specific bet
@@ -1445,11 +1517,8 @@ async function autoCheckResults() {
 
 const DEFAULT_CLV_SETTINGS = {
   enabled: false,
-  apiUrl: 'http://localhost:8765',
   delayHours: 2,
-  fallbackStrategy: 'pinnacle',
   maxRetries: 3,
-  maxConcurrency: 3,
   batchCheckIntervalHours: 4
 };
 
@@ -1461,129 +1530,66 @@ async function getClvSettings() {
   });
 }
 
+
 async function fetchClvFromApi(bets, clvSettings) {
-  const apiUrl = clvSettings.apiUrl || 'http://localhost:8765';
-  const timeoutMs = 30000; // 30 second timeout for CLV API calls
+  console.log('[CSV CLV] 📈 Starting batch CLV fetch for', bets.length, 'bets');
   
-  try {
-    // Prepare bet requests for the API
-    const betRequests = bets.map(bet => {
-      const sport = bet.sport?.toLowerCase();
-      // Warn about unknown sports instead of silently defaulting
-      if (!sport || !['football', 'basketball', 'tennis', 'hockey', 'american football', 'baseball', 'volleyball'].includes(sport)) {
-        console.warn(`📈 CLV: Unknown/missing sport "${bet.sport}" for bet ${getBetKey(bet) || bet.id}, using 'football' fallback`);
-      }
-      // Build payload that matches the API model expected by the server
-      // API expects: betId, sport, homeTeam, awayTeam, market, eventDate, bookmaker
-      return {
-        betId: String(getBetKey(bet) || bet.id || ''),
-        sport: sport || 'football',
-        homeTeam: extractHomeTeam(bet) || '',
-        awayTeam: extractAwayTeam(bet) || '',
-        market: bet.market || 'Match Odds',
-        eventDate: extractEventDate(bet),
-        bookmaker: bet.bookmaker || '',
-        // optional debugging fields (not required by the server, but helpful)
-        opening_odds: parseFloat(bet.odds) || 0,
-        selection: extractSelection(bet),
-        rawEvent: bet.event || ''
-      };
-    });
+  const results = [];
+  let failedCount = 0;
+  const errorReasons = new Set();
+  
+  // Process each bet with CSV service
+  for (const bet of bets) {
+    const betKey = getBetKey(bet) || bet.id;
+    console.log(`[CSV CLV] Processing bet ${betKey}: ${bet.event}`);
     
-    // Log minimal request payload for debugging (no PII)
-    console.log('📈 CLV batch request:', betRequests.map(b => ({ betId: b.betId, sport: b.sport, eventDate: b.eventDate })));
-    // Create AbortController for timeout
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-    
-    // Send batch request to API with timeout
-    const response = await fetch(`${apiUrl}/api/batch-closing-odds`, {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      },
-      body: JSON.stringify({
-        bets: betRequests,
-        fallback_strategy: clvSettings.fallbackStrategy || 'pinnacle',
-        max_concurrency: clvSettings.maxConcurrency || 3
-      }),
-      signal: controller.signal
-    });
-    
-    clearTimeout(timeoutId);
-    
-    if (!response.ok) {
-      let errorText = await response.text();
-      let parsed = null;
-      try {
-        parsed = JSON.parse(errorText);
-      } catch (e) {
-        // ignore
-      }
-      const message = parsed?.detail || parsed?.message || parsed?.error || errorText || `HTTP ${response.status}`;
-      console.error('📈 CLV API error:', response.status, message, parsed || errorText);
-      return { success: false, error: `API returned ${response.status}: ${message}` };
-    }
-    
-    const data = await response.json();
-    console.log('📈 CLV API response:', { jobId: data.job_id, processed: data.processed, failed: data.failed, resultsCount: data.results?.length || 0 });
-    
-    // Process results and calculate CLV
-    const results = [];
-    let failedCount = 0;
-    let errorReasons = new Set();
-    
-    for (const result of data.results || []) {
-      if (result.success && result.closing_odds) {
-        const bet = bets.find(b => (getBetKey(b) || b.id) === result.bet_id);
-        if (bet) {
-          const openingOdds = parseFloat(bet.odds) || 0;
-          const closingOdds = parseFloat(result.closing_odds) || 0;
-          const clv = closingOdds > 0 ? ((openingOdds / closingOdds) - 1) * 100 : 0;
-          
-          results.push({
-            betId: result.bet_id,
-            closingOdds: closingOdds,
-            clv: clv,
-            source: result.source || 'api',
-            bookmakerMatched: result.bookmaker_matched || false
-          });
-        }
+    try {
+      const result = await fetchClvForBet(bet);
+      
+      if (result && !result.error) {
+        // Success - calculate CLV
+        results.push({
+          betId: betKey,
+          closingOdds: result.closingOdds,
+          clv: result.clv,
+          source: 'csv',
+          confidence: result.confidence,
+          csvMatch: result.csvMatch
+        });
+        console.log(`[CSV CLV] ✅ Success for ${betKey}: CLV ${result.clv}%`);
       } else {
+        // Failed - record error
         failedCount++;
-        if (result.error) {
-          errorReasons.add(result.error);
-        }
+        const errorMsg = result?.error || 'unknown_error';
+        errorReasons.add(errorMsg);
+        const logIcon = errorMsg === 'league_not_supported' ? 'ℹ️' : '❌';
+        console.warn(`[CSV CLV] ${logIcon} Failed for ${betKey}: ${errorMsg}`);
       }
+    } catch (err) {
+      failedCount++;
+      errorReasons.add(err.message || 'exception');
+      console.error(`[CSV CLV] ❌ Exception for ${betKey}:`, err);
     }
-    
-    // Build error message if no results found
-    let errorMsg = null;
-    if (results.length === 0 && bets.length > 0) {
-      const reasons = Array.from(errorReasons).slice(0, 3).join('; ');
-      errorMsg = reasons 
-        ? `No closing odds found: ${reasons}` 
-        : 'No closing odds found - events may not be in OddsPortal database';
-    }
-    
-    return { 
-      success: results.length > 0,
-      results,
-      jobId: data.job_id,
-      processed: data.processed || 0,
-      failed: failedCount || data.failed || 0,
-      error: errorMsg
-    };
-  } catch (err) {
-    // Handle abort (timeout) specifically
-    if (err.name === 'AbortError') {
-      console.error('📈 CLV API request timed out after 30s');
-      return { success: false, error: 'Request timed out - API may be overloaded or unresponsive' };
-    }
-    console.error('📈 CLV API fetch error:', err);
-    return { success: false, error: err.message };
   }
+  
+  // Build summary
+  const success = results.length > 0;
+  let errorMsg = null;
+  
+  if (!success && bets.length > 0) {
+    const reasons = Array.from(errorReasons).slice(0, 3).join('; ');
+    errorMsg = reasons || 'No closing odds found';
+  }
+  
+  console.log(`[CSV CLV] Batch complete: ${results.length} success, ${failedCount} failed`);
+  
+  return {
+    success,
+    results,
+    processed: bets.length,
+    failed: failedCount,
+    error: errorMsg
+  };
 }
 
 function extractSelection(bet) {
@@ -1653,22 +1659,7 @@ async function autoFetchClv() {
       return;
     }
     
-    // Check if API is available with 5s timeout
-    try {
-      const healthController = new AbortController();
-      const healthTimeout = setTimeout(() => healthController.abort(), 5000);
-      const healthResponse = await fetch(`${clvSettings.apiUrl}/health`, {
-        signal: healthController.signal
-      });
-      clearTimeout(healthTimeout);
-      if (!healthResponse.ok) {
-        console.warn('📈 CLV API not available, skipping');
-        return;
-      }
-    } catch (err) {
-      console.warn('📈 CLV API not reachable:', err.name === 'AbortError' ? 'health check timed out' : err.message);
-      return;
-    }
+    // CSV service doesn't need API health check - ready to use immediately
     
     // Get settled bets without CLV
     const storage = await new Promise((resolve) => {
@@ -1729,7 +1720,9 @@ async function autoFetchClv() {
             closingOdds: clvResult.closingOdds,
             clv: clvResult.clv,
             clvSource: clvResult.source,
-            clvFetchedAt: new Date().toISOString()
+            clvFetchedAt: new Date().toISOString(),
+            csvConfidence: clvResult.confidence,
+            csvMatch: clvResult.csvMatch
           };
         }
         
@@ -1791,7 +1784,11 @@ api.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'recalculateEffectiveBankroll') {
     recalculateEffectiveBankroll();
     sendResponse({ success: true });
+    return true; // Only return true for messages we handle
   }
-  return true;
+  // Don't return true for messages we don't handle - let other listeners handle them
 });
+
+console.log('✅ [BACKGROUND] Script loaded completely - message handlers registered');
+console.log('✅ [BACKGROUND] Listening for messages...');
 

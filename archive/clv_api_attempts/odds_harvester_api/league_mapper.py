@@ -80,16 +80,36 @@ LEAGUE_ALIASES = {
     "liga portugal": "portugal-primeira-liga",
     "scottish premiership": "scotland-premiership",
     "spfl": "scotland-premiership",
+    "scottish championship": "scotland-championship",
     "super lig": "turkey-super-lig",
     "turkish super lig": "turkey-super-lig",
     "belgian pro league": "belgium-jupiler-pro-league",
     "jupiler pro league": "belgium-jupiler-pro-league",
+    "belgian first division b": "belgium-first-division-b",
     "russian premier league": "russia-premier-league",
     "austrian bundesliga": "austria-bundesliga",
     "swiss super league": "switzerland-super-league",
+    "swiss challenge league": "switzerland-challenge-league",
     "danish superliga": "denmark-superliga",
     "norwegian eliteserien": "norway-eliteserien",
     "swedish allsvenskan": "sweden-allsvenskan",
+    
+    # Football - Mid-Tier European Leagues
+    "greek super league": "greece-super-league",
+    "super league greece": "greece-super-league",
+    "ekstraklasa": "poland-ekstraklasa",
+    "polish ekstraklasa": "poland-ekstraklasa",
+    "czech first league": "czech-republic-first-league",
+    "fortuna liga": "czech-republic-first-league",
+    "croatian hnl": "croatia-hnl",
+    "prva hnl": "croatia-hnl",
+    "romanian liga 1": "romania-liga-1",
+    "liga 1 romania": "romania-liga-1",
+    "ukrainian premier league": "ukraine-premier-league",
+    "serbian superliga": "serbia-super-liga",
+    "bulgarian first league": "bulgaria-first-league",
+    "hungarian nb i": "hungary-nb-i",
+    "slovak super liga": "slovakia-super-liga",
     
     # Football - South America
     "brasileirao": "brazil-serie-a",
@@ -194,6 +214,46 @@ TEAM_LEAGUES = {
     "wolverhampton": "england-premier-league",
     "wolves": "england-premier-league",
     
+    # Championship (English Second Tier)
+    "leeds united": "england-championship",
+    "leeds": "england-championship",
+    "leicester city": "england-championship",
+    "leicester": "england-championship",
+    "southampton": "england-championship",
+    "ipswich town": "england-championship",
+    "ipswich": "england-championship",
+    "west bromwich albion": "england-championship",
+    "west brom": "england-championship",
+    "norwich city": "england-championship",
+    "norwich": "england-championship",
+    "middlesbrough": "england-championship",
+    "coventry city": "england-championship",
+    "coventry": "england-championship",
+    "bristol city": "england-championship",
+    "swansea city": "england-championship",
+    "swansea": "england-championship",
+    "hull city": "england-championship",
+    "hull": "england-championship",
+    "preston north end": "england-championship",
+    "preston": "england-championship",
+    "cardiff city": "england-championship",
+    "cardiff": "england-championship",
+    "stoke city": "england-championship",
+    "stoke": "england-championship",
+    "millwall": "england-championship",
+    "blackburn rovers": "england-championship",
+    "blackburn": "england-championship",
+    "queens park rangers": "england-championship",
+    "qpr": "england-championship",
+    "watford": "england-championship",
+    "plymouth argyle": "england-championship",
+    "plymouth": "england-championship",
+    "birmingham city": "england-championship",
+    "birmingham": "england-championship",
+    "rotherham united": "england-championship",
+    "rotherham": "england-championship",
+    "sheffield wednesday": "england-championship",
+    
     # La Liga
     "barcelona": "spain-laliga",
     "real madrid": "spain-laliga",
@@ -215,6 +275,34 @@ TEAM_LEAGUES = {
     "cadiz": "spain-laliga",
     "alaves": "spain-laliga",
     "granada": "spain-laliga",
+    
+    # Segunda División (Spanish Second Tier)
+    "espanyol": "spain-segunda-division",
+    "real zaragoza": "spain-segunda-division",
+    "zaragoza": "spain-segunda-division",
+    "real valladolid": "spain-segunda-division",
+    "valladolid": "spain-segunda-division",
+    "sporting gijon": "spain-segunda-division",
+    "sporting": "spain-segunda-division",
+    "real oviedo": "spain-segunda-division",
+    "oviedo": "spain-segunda-division",
+    "levante": "spain-segunda-division",
+    "eibar": "spain-segunda-division",
+    "elche": "spain-segunda-division",
+    "leganes": "spain-segunda-division",
+    "burgos": "spain-segunda-division",
+    "racing santander": "spain-segunda-division",
+    "racing": "spain-segunda-division",
+    "tenerife": "spain-segunda-division",
+    "albacete": "spain-segunda-division",
+    "mirandes": "spain-segunda-division",
+    "huesca": "spain-segunda-division",
+    "cartagena": "spain-segunda-division",
+    "amorebieta": "spain-segunda-division",
+    "villarreal b": "spain-segunda-division",
+    "andorra": "spain-segunda-division",
+    "racing ferrol": "spain-segunda-division",
+    "alcorcon": "spain-segunda-division",
     
     # Serie A
     "inter milan": "italy-serie-a",
@@ -239,6 +327,28 @@ TEAM_LEAGUES = {
     "frosinone": "italy-serie-a",
     "verona": "italy-serie-a",
     "salernitana": "italy-serie-a",
+    
+    # Serie B (Italian Second Tier)
+    "parma": "italy-serie-b",
+    "como": "italy-serie-b",
+    "venezia": "italy-serie-b",
+    "cremonese": "italy-serie-b",
+    "palermo": "italy-serie-b",
+    "sampdoria": "italy-serie-b",
+    "brescia": "italy-serie-b",
+    "catanzaro": "italy-serie-b",
+    "sudtirol": "italy-serie-b",
+    "cittadella": "italy-serie-b",
+    "modena": "italy-serie-b",
+    "pisa": "italy-serie-b",
+    "spezia": "italy-serie-b",
+    "reggiana": "italy-serie-b",
+    "cosenza": "italy-serie-b",
+    "ternana": "italy-serie-b",
+    "bari": "italy-serie-b",
+    "ascoli": "italy-serie-b",
+    "feralpisalo": "italy-serie-b",
+    "lecco": "italy-serie-b",
     
     # Bundesliga
     "bayern munich": "germany-bundesliga",
@@ -267,6 +377,36 @@ TEAM_LEAGUES = {
     "heidenheim": "germany-bundesliga",
     "darmstadt": "germany-bundesliga",
     
+    # 2. Bundesliga (German Second Tier)
+    "schalke": "germany-2-bundesliga",
+    "schalke 04": "germany-2-bundesliga",
+    "hamburger sv": "germany-2-bundesliga",
+    "hamburg": "germany-2-bundesliga",
+    "hertha berlin": "germany-2-bundesliga",
+    "hertha": "germany-2-bundesliga",
+    "fortuna dusseldorf": "germany-2-bundesliga",
+    "dusseldorf": "germany-2-bundesliga",
+    "hannover 96": "germany-2-bundesliga",
+    "hannover": "germany-2-bundesliga",
+    "st pauli": "germany-2-bundesliga",
+    "fc st pauli": "germany-2-bundesliga",
+    "kaiserslautern": "germany-2-bundesliga",
+    "karlsruher sc": "germany-2-bundesliga",
+    "karlsruhe": "germany-2-bundesliga",
+    "nurnberg": "germany-2-bundesliga",
+    "magdeburg": "germany-2-bundesliga",
+    "paderborn": "germany-2-bundesliga",
+    "holstein kiel": "germany-2-bundesliga",
+    "kiel": "germany-2-bundesliga",
+    "greuther furth": "germany-2-bundesliga",
+    "furth": "germany-2-bundesliga",
+    "hansa rostock": "germany-2-bundesliga",
+    "rostock": "germany-2-bundesliga",
+    "wehen wiesbaden": "germany-2-bundesliga",
+    "wiesbaden": "germany-2-bundesliga",
+    "eintracht braunschweig": "germany-2-bundesliga",
+    "braunschweig": "germany-2-bundesliga",
+    
     # Ligue 1
     "paris saint-germain": "france-ligue-1",
     "psg": "france-ligue-1",
@@ -287,6 +427,29 @@ TEAM_LEAGUES = {
     "lorient": "france-ligue-1",
     "metz": "france-ligue-1",
     "clermont": "france-ligue-1",
+    
+    # Ligue 2 (French Second Tier)
+    "bordeaux": "france-ligue-2",
+    "saint-etienne": "france-ligue-2",
+    "st etienne": "france-ligue-2",
+    "auxerre": "france-ligue-2",
+    "laval": "france-ligue-2",
+    "grenoble": "france-ligue-2",
+    "annecy": "france-ligue-2",
+    "paris fc": "france-ligue-2",
+    "amiens": "france-ligue-2",
+    "pau": "france-ligue-2",
+    "rodez": "france-ligue-2",
+    "bastia": "france-ligue-2",
+    "valenciennes": "france-ligue-2",
+    "guingamp": "france-ligue-2",
+    "dunkerque": "france-ligue-2",
+    "quevilly rouen": "france-ligue-2",
+    "rouen": "france-ligue-2",
+    "caen": "france-ligue-2",
+    "troyes": "france-ligue-2",
+    "concarneau": "france-ligue-2",
+    "angers": "france-ligue-2",
 }
 
 
@@ -385,6 +548,7 @@ def detect_league(
     Returns:
         {
             "league": "england-premier-league",
+            "sport": "basketball",  # Inferred sport (if originally "other")
             "confidence": 0.95,
             "source": "team_lookup" | "tournament_alias" | "fuzzy_match" | "custom"
         }
@@ -395,47 +559,72 @@ def detect_league(
     away_normalized = normalize_string(away_team)
     tournament_normalized = normalize_string(tournament)
     sport_normalized = normalize_string(sport)
+    original_sport = sport_normalized  # Save original before inference
+
+    # 0. Infer actual sport if sport is "other" (check tournament name for clues)
+    if sport_normalized == "other":
+        if "nba" in tournament_normalized:
+            sport_normalized = "basketball"
+        elif "nfl" in tournament_normalized:
+            sport_normalized = "americanfootball"
+        elif "nhl" in tournament_normalized:
+            sport_normalized = "icehockey"
+        elif "mlb" in tournament_normalized:
+            sport_normalized = "baseball"
+        elif "atp" in tournament_normalized or "wta" in tournament_normalized:
+            sport_normalized = "tennis"
+
+    # Helper to add sport to result
+    def make_result(league: str, confidence: float, source: str) -> dict:
+        return {
+            "league": league,
+            "sport": sport_normalized,  # Include inferred sport
+            "confidence": confidence,
+            "source": source,
+        }
 
     # 1. Check custom mappings first (highest priority)
     custom = load_custom_mappings()
     if tournament_normalized in custom:
-        return {
-            "league": custom[tournament_normalized],
-            "confidence": 1.0,
-            "source": "custom",
-        }
+        return make_result(custom[tournament_normalized], 1.0, "custom")
 
-    # 2. Check tournament aliases
-    for alias, league_slug in LEAGUE_ALIASES.items():
-        if alias in tournament_normalized or tournament_normalized in alias:
-            return {
-                "league": league_slug,
-                "confidence": 0.95,
-                "source": "tournament_alias",
-            }
+    # 2. Special handling for Tennis ATP/WTA tournaments
+    if sport_normalized == "tennis":
+        # Pattern: "Country - ATP/WTA City" -> "atp-tour" or "wta-tour"
+        if "atp" in tournament_normalized or "wta" in tournament_normalized:
+            # Extract tournament type
+            if "atp" in tournament_normalized:
+                tour_type = "atp"
+            else:
+                tour_type = "wta"
+            
+            # Check for specific tournament levels
+            if "masters" in tournament_normalized or "1000" in tournament_normalized:
+                return make_result(f"{tour_type}-masters-1000", 0.90, "tournament_pattern")
+            elif "500" in tournament_normalized:
+                return make_result(f"{tour_type}-500", 0.90, "tournament_pattern")
+            elif "250" in tournament_normalized:
+                return make_result(f"{tour_type}-250", 0.90, "tournament_pattern")
+            else:
+                # Generic ATP/WTA tour event
+                return make_result(f"{tour_type}-tour", 0.85, "tournament_pattern")
 
-    # 3. Check team lookups
+    # 3. Check tournament aliases
+    if tournament_normalized:
+        for alias, league_slug in LEAGUE_ALIASES.items():
+            if alias in tournament_normalized or tournament_normalized in alias:
+                return make_result(league_slug, 0.95, "tournament_alias")
+
+    # 4. Check team lookups
     home_league = TEAM_LEAGUES.get(home_normalized)
     away_league = TEAM_LEAGUES.get(away_normalized)
 
     if home_league and away_league and home_league == away_league:
-        return {
-            "league": home_league,
-            "confidence": 0.95,
-            "source": "team_lookup",
-        }
+        return make_result(home_league, 0.95, "team_lookup")
     elif home_league:
-        return {
-            "league": home_league,
-            "confidence": 0.80,
-            "source": "team_lookup",
-        }
+        return make_result(home_league, 0.80, "team_lookup")
     elif away_league:
-        return {
-            "league": away_league,
-            "confidence": 0.80,
-            "source": "team_lookup",
-        }
+        return make_result(away_league, 0.80, "team_lookup")
 
     # 4. Fuzzy match on tournament name
     all_leagues = list(LEAGUE_ALIASES.keys())
@@ -443,11 +632,7 @@ def detect_league(
 
     if match_result:
         matched_alias = match_result["match"]
-        return {
-            "league": LEAGUE_ALIASES[matched_alias],
-            "confidence": match_result["score"],
-            "source": "fuzzy_match",
-        }
+        return make_result(LEAGUE_ALIASES[matched_alias], match_result["score"], "fuzzy_match")
 
     # 5. Try to infer from sport + country patterns
     country_patterns = {
@@ -468,11 +653,7 @@ def detect_league(
             # Try to find a matching league for this sport + country
             for alias, league_slug in LEAGUE_ALIASES.items():
                 if country in league_slug and sport_normalized in alias:
-                    return {
-                        "league": league_slug,
-                        "confidence": 0.6,
-                        "source": "country_inference",
-                    }
+                    return make_result(league_slug, 0.6, "country_inference")
 
     # No match found - log for future improvement
     log_unmapped_league(home_team, away_team, tournament, sport)

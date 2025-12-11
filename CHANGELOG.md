@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.103.5] - 2025-12-11
+
+### ✨ New Features
+- **Hybrid CLV System**: Combined CSV-based tracking for football with API-based polling for player props.
+- **Player Props Polling**: New `prop_poller.js` module that tracks line movement for player props (NBA, NFL, MLB, NHL) using The Odds API.
+  - Polls 3x daily (8am, 2pm, 8pm).
+  - Tracks opening vs current odds.
+  - Smart quota management for free API tier.
+
+## [1.0.102.0] - 2025-12-10
+
+### ✨ New Features
+- **CSV-Based CLV**: Replaced Python API server with direct CSV downloads from football-data.co.uk for football CLV.
+  - **Zero Cost**: No API keys required for football CLV.
+  - **Broad Coverage**: Supports 22 major European leagues.
+  - **Markets**: Tracks 1X2, Over/Under 2.5, and Asian Handicap closing lines.
+  - **Caching**: Intelligent caching of CSV files to minimize bandwidth.
+
+### 🔧 Technical
+- **Service Worker Modules**: Integrated `csvClvService.js`, `footballDataLeagues.js`, and `prop_poller.js` into the background service worker.
+- **Manifest Updates**: Updated permissions and host permissions for new data sources.
+
 ## [1.0.99] - 2025-12-02
 
 ### 🐛 Bug Fixes

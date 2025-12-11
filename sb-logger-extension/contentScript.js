@@ -137,11 +137,6 @@ function () {
       keywords: ['card', 'booking', 'yellow', 'red'],
       type: 'block'
     },
-    asian_handicap: {
-      name: 'Asian Handicap',
-      keywords: ['asian handicap', 'ah'],
-      type: 'block'
-    },
     dnb: {
       name: 'Draw No Bet',
       keywords: ['draw no bet', 'dnb'],
@@ -161,6 +156,16 @@ function () {
       name: 'Correct Score',
       keywords: ['correct score', 'exact score'],
       type: 'block'
+    },
+    btts: {
+      name: 'BTTS',
+      keywords: ['btts', 'both teams to score'],
+      type: 'block'
+    },
+    clv_available: {
+      name: 'CLV Available (Whitelist)',
+      keywords: ['home', 'draw', 'away', '1x2', 'match odds', 'over 2.5', 'under 2.5', 'o/u', 'asian handicap', 'ah', 'handicap'],
+      type: 'whitelist'
     },
     goals_only: {
       name: 'Goals Only (Whitelist)',

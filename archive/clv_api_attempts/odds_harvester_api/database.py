@@ -29,6 +29,8 @@ class Database:
         self.db_path = db_path
         self._local = threading.local()
         self._init_schema()
+        self._run_migrations()
+        self._create_indices()
 
     def _get_connection(self) -> sqlite3.Connection:
         """Get thread-local database connection."""
@@ -81,6 +83,7 @@ class Database:
                     job_id TEXT NOT NULL,
                     bet_id TEXT NOT NULL,
                     sport TEXT NOT NULL,
+                    tournament TEXT,
                     home_team TEXT NOT NULL,
                     away_team TEXT NOT NULL,
                     market TEXT NOT NULL,
@@ -146,22 +149,77 @@ class Database:
                 )
             """)
 
-            # Create indices for performance
-            cursor.execute(
-                "CREATE INDEX IF NOT EXISTS idx_bet_requests_job_id ON bet_requests(job_id)"
-            )
-            cursor.execute(
-                "CREATE INDEX IF NOT EXISTS idx_closing_odds_lookup ON closing_odds_cache(sport, league, event_date)"
-            )
-            cursor.execute(
-                "CREATE INDEX IF NOT EXISTS idx_league_cache_lookup ON league_cache(sport, league, event_date)"
-            )
-            cursor.execute(
-                "CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status)"
-            )
-            cursor.execute(
-                "CREATE INDEX IF NOT EXISTS idx_failure_log_timestamp ON failure_log(timestamp)"
-            )
+    def _create_indices(self):
+        """Create database indices for performance."""
+        with self._cursor() as cursor:
+            # Create indices for performance (with error handling for schema mismatches)
+            try:
+                cursor.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_bet_requests_job_id ON bet_requests(job_id)"
+                )
+            except sqlite3.OperationalError:
+                pass  # Column doesn't exist in this schema version
+            
+            try:
+                cursor.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_closing_odds_lookup ON closing_odds_cache(sport, league, event_date)"
+                )
+            except sqlite3.OperationalError:
+                pass
+            
+            try:
+                cursor.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_league_cache_lookup ON league_cache(sport, league, event_date)"
+                )
+            except sqlite3.OperationalError:
+                pass
+            
+            try:
+                cursor.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status)"
+                )
+            except sqlite3.OperationalError:
+                pass
+            
+            try:
+                cursor.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_failure_log_timestamp ON failure_log(timestamp)"
+                )
+            except sqlite3.OperationalError:
+                pass
+
+    def _run_migrations(self):
+        """Run database migrations for schema updates."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        # Check current schema version
+        schema_version = self.get_metadata("schema_version")
+        if schema_version is None:
+            schema_version = 1  # Initial version
+        else:
+            # Handle both integer and float string versions
+            try:
+                schema_version = int(float(schema_version))
+            except (ValueError, TypeError):
+                schema_version = 1
+
+        # Migration 1 -> 2: Add tournament column to bet_requests
+        if schema_version < 2:
+            try:
+                # Check if tournament column exists
+                cursor.execute("PRAGMA table_info(bet_requests)")
+                columns = [row[1] for row in cursor.fetchall()]
+                
+                if "tournament" not in columns:
+                    cursor.execute("ALTER TABLE bet_requests ADD COLUMN tournament TEXT")
+                    conn.commit()
+                    print("✅ Migration 1→2: Added tournament column to bet_requests")
+                
+                self.set_metadata("schema_version", 2)
+            except Exception as e:
+                print(f"⚠️  Migration 1→2 failed: {e}")
+                conn.rollback()
 
     def close(self):
         """Close database connection."""
@@ -228,6 +286,7 @@ class Database:
         job_id: str,
         bet_id: str,
         sport: str,
+        tournament: str,
         home_team: str,
         away_team: str,
         market: str,
@@ -239,10 +298,10 @@ class Database:
             cursor.execute(
                 """
                 INSERT INTO bet_requests 
-                (job_id, bet_id, sport, home_team, away_team, market, event_date, bookmaker)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (job_id, bet_id, sport, tournament, home_team, away_team, market, event_date, bookmaker)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-                (job_id, bet_id, sport, home_team, away_team, market, event_date, bookmaker),
+                (job_id, bet_id, sport, tournament, home_team, away_team, market, event_date, bookmaker),
             )
 
     def get_bet_requests(self, job_id: str) -> list[dict]:
@@ -429,36 +488,7 @@ def get_failure_rate(db: Database) -> float:
         return round(failures / max(total, 1), 3)
 
 
-def get_cache_stats(db: Database) -> dict:
-    """Get cache statistics."""
-    with db._cursor() as cursor:
-        # Count league cache entries
-        cursor.execute("SELECT COUNT(*) as count FROM league_cache")
-        league_count = cursor.fetchone()["count"]
-
-        # Count odds cache entries
-        cursor.execute("SELECT COUNT(*) as count FROM closing_odds_cache")
-        odds_count = cursor.fetchone()["count"]
-
-        # Get oldest/newest timestamps
-        cursor.execute(
-            "SELECT MIN(last_scraped) as oldest, MAX(last_scraped) as newest FROM league_cache"
-        )
-        row = cursor.fetchone()
-
-        oldest = None
-        newest = None
-        if row["oldest"]:
-            oldest = datetime.fromtimestamp(row["oldest"]).isoformat()
-        if row["newest"]:
-            newest = datetime.fromtimestamp(row["newest"]).isoformat()
-
-        return {
-            "league_count": league_count,
-            "odds_count": odds_count,
-            "oldest_timestamp": oldest,
-            "newest_timestamp": newest,
-        }
+# Removed duplicate get_cache_stats - use the one in server.py instead
 
 
 def cleanup_old_cache(db: Database, retention_days: int = 30) -> dict:
