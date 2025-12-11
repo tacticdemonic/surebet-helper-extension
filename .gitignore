@@ -54,3 +54,4 @@ store-assets/
  
 # Deprecated OddsHarvester tools (archived, keep for reference in archive/)
 tools/odds_harvester_api/
+sb-logger-extension/tools/odds_harvester_api/
