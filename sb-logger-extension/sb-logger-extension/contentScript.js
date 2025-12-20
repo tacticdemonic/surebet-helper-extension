@@ -1770,7 +1770,18 @@ function () {
 
     console.log('Surebet Helper: Attempting dustbin action:', action);
 
-    const dustbinBtn = row.querySelector('.btn-group.drop-trash > button');
+    // Try multiple selectors for the dustbin button
+    let dustbinBtn = row.querySelector('.btn-group.drop-trash > button');
+    if (!dustbinBtn) {
+      dustbinBtn = row.querySelector('.drop-trash button[data-bs-toggle="dropdown"]');
+    }
+    if (!dustbinBtn) {
+      dustbinBtn = row.querySelector('button[data-bs-toggle="dropdown"] i.fa-trash-alt');
+      if (dustbinBtn) {
+        dustbinBtn = dustbinBtn.closest('button');
+      }
+    }
+    
     if (!dustbinBtn) {
       console.warn('Surebet Helper: Dustbin button not found in row');
       showToast('⚠ Dustbin button not found', false, 3000);
@@ -1783,28 +1794,31 @@ function () {
 
     // Wait for the menu to appear - try multiple strategies
     let menuFound = false;
-    for (let attempt = 0; attempt < 8; attempt++) {
+    for (let attempt = 0; attempt < 10; attempt++) {
       // Try multiple selectors for the dropdown menu
-      let menu = row.querySelector('.dropdown-menu');
+      let menu = row.querySelector('.dropdown-menu.hidden-records-menu');
       if (!menu) {
         menu = row.querySelector('.hidden-records-menu');
       }
       if (!menu) {
-        menu = row.querySelector('[class*="dropdown"]');
+        menu = row.querySelector('.dropdown-menu');
+      }
+      if (!menu) {
+        menu = row.querySelector('[class*="dropdown-menu"]');
       }
       if (!menu) {
         // Also check within the btn-group
         const btnGroup = row.querySelector('.btn-group.drop-trash');
         if (btnGroup) {
-          menu = btnGroup.querySelector('.dropdown-menu, ul, [role="menu"]');
+          menu = btnGroup.querySelector('.dropdown-menu, .hidden-records-menu, ul, [role="menu"]');
         }
       }
       
-      // Menu is visible if it exists and is displayed
+      // Menu is visible if it exists and is displayed (check for 'available' class or display style)
       const isVisible = menu && (
-        !menu.classList.contains('hidden') || 
+        menu.classList.contains('available') ||
         menu.classList.contains('show') ||
-        window.getComputedStyle(menu).display !== 'none'
+        (!menu.classList.contains('hidden') && window.getComputedStyle(menu).display !== 'none')
       );
       
       if (isVisible) {
@@ -1814,16 +1828,16 @@ function () {
         // Determine which keywords to look for based on action
         let keywords = [];
         if (action === 'hide-valuebet') {
-          // Match variations: "Hide this valuebet", "this valuebet", "Hide valuebet", etc.
-          keywords = ['this valuebet', 'hide valuebet', 'valuebet'];
+          // Match variations: "Only this valuebet", "this valuebet", etc.
+          keywords = ['only this valuebet', 'this valuebet'];
         } else if (action === 'hide-event') {
-          // Match variations: "Hide entire event", "entire event", "hide event", etc.
-          keywords = ['entire event', 'hide event', 'event'];
+          // Match variations: "Entire event", "entire event", etc.
+          keywords = ['entire event'];
         }
 
-        // Find the menu item - try multiple selector strategies
-        // Note: surebet.com uses <button class="dropdown-item"> elements
-        const menuItems = menu.querySelectorAll('button.dropdown-item, .dropdown-item, li a, a.dropdown-item, [role="menuitem"], button, a, li');
+        // Find the menu item - surebet.com now uses <input type="submit" class="dropdown-item" value="text">
+        // Get all possible clickable elements including forms with inputs
+        const menuItems = menu.querySelectorAll('input.dropdown-item, button.dropdown-item, .dropdown-item, form input[type="submit"]');
         console.log('Surebet Helper: Found', menuItems.length, 'menu items. Looking for keywords:', keywords.join(', '));
         
         let clicked = false;
@@ -1831,8 +1845,9 @@ function () {
         for (const keyword of keywords) {
           if (clicked) break;
           for (const item of menuItems) {
-            const itemText = item.textContent.trim().toLowerCase();
-            console.log('Surebet Helper: Checking menu item:', item.textContent.trim());
+            // For input elements, check the value attribute; for others, check textContent
+            const itemText = (item.value || item.textContent || '').trim().toLowerCase();
+            console.log('Surebet Helper: Checking menu item:', itemText);
             if (itemText.includes(keyword.toLowerCase())) {
               item.click();
               clicked = true;
@@ -1844,23 +1859,23 @@ function () {
 
         if (!clicked) {
           // Log all menu items for debugging
-          const allTexts = Array.from(menuItems).map(i => i.textContent.trim()).filter(t => t);
+          const allTexts = Array.from(menuItems).map(i => (i.value || i.textContent || '').trim()).filter(t => t);
           console.warn('Surebet Helper: Menu item not found. Available items:', allTexts.join(' | '));
           showToast('⚠ Dustbin menu item not found', false, 3000);
-          // Close the menu by clicking elsewhere
+          // Close the menu by clicking the button again
           dustbinBtn.click();
         }
         return;
       }
 
       // Wait before next attempt (increasing delay)
-      if (attempt < 7) {
-        await new Promise(resolve => setTimeout(resolve, 150 + (attempt * 50)));
+      if (attempt < 9) {
+        await new Promise(resolve => setTimeout(resolve, 100 + (attempt * 50)));
       }
     }
 
     if (!menuFound) {
-      console.warn('Surebet Helper: Dustbin menu did not appear after 8 attempts');
+      console.warn('Surebet Helper: Dustbin menu did not appear after 10 attempts');
       showToast('⚠ Dustbin menu did not open', false, 3000);
     }
   }

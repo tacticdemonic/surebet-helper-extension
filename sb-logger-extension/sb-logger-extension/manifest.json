@@ -1,7 +1,7 @@
 ﻿{
     "manifest_version":  3,
     "name":  "Surebet Helper - Save Bets",
-    "version": "1.1.4",
+    "version": "1.1.5",
     "description":  "Track and analyze value bets from surebet.com. Save bets with one click, auto-fill stakes on exchanges, auto-check results, view P/L charts, track CLV (22 European football leagues, 1X2/O/U/AH markets), and export data.",
     "author":  "Surebet Helper Team",
     "homepage_url":  "https://github.com/tacticdemonic/surebet-helper-extension",

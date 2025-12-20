@@ -1,0 +1,3 @@
+import a from"jquery";var e=document.querySelector('meta[name="session-data"]').dataset,d=JSON.parse(e.isStaff),m=e.domain,x=e.serviceWorkerPath,f=parseInt(e.selectedAudioIndex),g=JSON.parse(e.isUserLoggedIn),h=JSON.parse(e.isCompactView),C=JSON.parse(e.isNewSurebetsAutoupdateAvailable),S=JSON.parse(e.productPageMaximumLimit),v=JSON.parse(e.
+productPageUltimateLimit),s=JSON.parse(e.isUserComplexConditionsAvailable),A=e.requestMethod;import{Popover as p}from"bootstrap";var i,r,o,t=!1;function c(){o&&(r&&!s?(t||o.show(),t=!0):(t&&o.hide(),t=!1))}function n(){r=i.val().startsWith("\\"),c()}function l(){n()}a(function(){i=a("#search-narrow"),o=p.getInstance("#navigation-search-scope-feature-complex-conditions-popup"),i.on("input",l),n()});
+
