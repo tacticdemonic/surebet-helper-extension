@@ -1,377 +1,396 @@
-# Surebet Helper — Browser Extension for Surebet.com
+# Surebet Helper — Firefox Extension for Surebet.com
 
-A powerful browser extension for tracking and analyzing value bets from surebet.com. Save bets with one click, automatically check results, visualize your P/L, and export your data.
+## What it does
+- **Auto-injects** a "💾 Save" button on every bet row on surebet.com/valuebets pages
+- **Auto-fill stakes** (configurable): Automatically inputs calculated Kelly stakes into betting slips on Betfair, Smarkets, and Matchbook
+- **Bookmaker filter presets**: Quick-apply preset bookmaker filters in the filter popup
+- **Auto-captures** all bet details: bookmaker, event, market, odds, probability, overvalue
+- **Prompts for stake** when you click Save
+- **Tracks profit**: Automatically calculates potential return and profit
+- **Expected Value (EV)**: Shows theoretical expected profit for each bet
+- **Exchange commission**: Supports commission rates for Betfair, Betdaq, Matchbook, Smarkets
+- **Bet settlement**: Mark bets as Won ✓, Lost ✗, or Void ○ with one click
+- **Auto-check results**: Optionally configure free APIs to automatically check bet outcomes (see API Setup below)
+- **Smart retries**: Waits 30 min after event ends, retries up to 5 times with exponential backoff
+- **Running P/L**: Shows total profit/loss and ROI across all settled bets
+- **Advanced Analysis**: Comprehensive dashboard with odds band performance, overvalue distribution, and sport breakdown
+- **EV vs Actual**: Compare your actual results against expected value to track performance
+- **Visual charts**: Interactive graph showing your P/L and Expected EV trends over time
+- **Export & manage**: View all saved bets in popup, export to JSON/CSV, or clear all
+- **Auto-Hide Bets**: Automatically hides bets on surebet.com immediately after saving them (configurable in Settings).
+ - **Market Filters (On-site & Popup)**: Configure market-level filtering to hide or highlight types of markets both in the saved-bets popup and directly on surebet.com (e.g., Asian Handicap, DNB, Cards).
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Browser](https://img.shields.io/badge/Browser-Chrome%20%7C%20Firefox%20%7C%20Edge-blue)](https://github.com/tacticdemonic/surebet-helper-extension)
+## Installation
 
----
-
-## ✨ Features
-
-### 🎯 Core Functionality
-- **One-Click Save**: Auto-injected 💾 Save button on every bet row at surebet.com/valuebets
-- **Smart Data Capture**: Automatically captures bookmaker, event, odds, probability, overvalue, and more
-- **Stake Tracking**: Prompts for stake amount and optional notes when saving
-- **Bet Settlement**: Mark bets as Won ✓, Lost ✗, or Void ○ with a single click
-
-### 📊 Analytics & Dashboard
-- **Full-Screen Analysis Tab** - Opens in dedicated tab with 6 views:
-  - 📈 **P/L Chart** - Interactive profit/loss trend visualization
-  - 💧 **Liquidity Tiers** - Analyze bets by limit stratification
-  - 📊 **Bookmaker Profiling** - Performance breakdown by bookmaker
-  - 📅 **Temporal Analysis** - Identify time-based patterns
-  - 🎲 **Kelly Metrics** - Fill ratio vs recommended Kelly stakes
-  - 📥 **Export** - JSON (with analysis) + CSV (27-column detail)
-- **Real-Time P/L**: Updated automatically as bets settle
-- **Expected Value (EV)**: Theoretical profit calculation for every bet
-- **Performance Metrics**: ROI, win rate, average odds, and more
-
-### 🤖 Automation
-- **Auto-Fill Stakes**: Automatically inputs calculated Kelly stakes into betting slips on Betfair, Smarkets, and Matchbook (configurable, disabled by default)
-- **Auto-Check Results**: Optional integration with free sports APIs (API-Football, The Odds API)
-- **Smart Retries**: Waits 30 min after event ends, retries up to 5 times with exponential backoff
-- **Hourly Background Checks**: Automatically checks eligible pending bets
-
-### 🎲 Kelly Staking Configuration
-- **Bankroll Management**: Set your starting bankroll and track current balance
-- **Fractional Kelly**: Configure Kelly fraction (25% recommended for safety)
-- **Commission Accounting**: Automatically adjust odds based on exchange commission when calculating stakes
-- **Real-Time Summary**: View current bankroll, P/L, and status in Settings tab
-
-### 🔧 Convenience Features
- - **Debug Logging & Export**: Per-bet debug logs are captured for auto-fill attempts (selector matches, timing, failures) and are included in pending-bets JSON exports for troubleshooting.
-
----
-
-## 📸 Screenshots
-
-> **Note**: Add your screenshots to the `screenshots/` folder to showcase the extension in action!
-
-<!-- Uncomment when you add screenshots:
-### Save Button on Surebet.com
-![Save Button](screenshots/save-button.png)
-
-### Extension Popup with Saved Bets
-![Popup View](screenshots/popup-bets.png)
-
-### P/L Chart Visualization
-![Chart View](screenshots/chart-view.png)
--->
-
----
-
-## 🚀 Installation
-
-### Chrome / Edge / Brave (Chromium-based)
-
-1. Download or clone this repository
-2. Open your browser and navigate to:
+### Chrome / Edge / Brave (Chromium-based browsers)
+1. Open your browser and navigate to:
    - **Chrome**: `chrome://extensions/`
    - **Edge**: `edge://extensions/`
    - **Brave**: `brave://extensions/`
-3. Enable **"Developer mode"** (toggle in top-right)
-4. Click **"Load unpacked"** and select the `surebet-helper-extension` folder
-5. The extension is now installed permanently
+
+2. Enable "Developer mode" (toggle in top-right corner)
+
+3. Click "Load unpacked" and select the `surebet-helper-extension` folder
+
+4. The extension is now permanently installed (persists across browser restarts)
 
 ### Firefox
+1. Open Firefox and navigate to `about:debugging#/runtime/this-firefox`
 
-1. Download or clone this repository
-2. Open Firefox and navigate to `about:debugging#/runtime/this-firefox`
-3. Click **"Load Temporary Add-on"** and select `manifest.json` from the `surebet-helper-extension` folder
-   - **Note**: Temporary add-ons are removed when Firefox restarts
-   - For permanent installation, see [Signing Guide](surebet-helper-extension/INSTALL.md)
+2. Click "Load Temporary Add-on" and select the `manifest.json` file from the `surebet-helper-extension` folder
+   - Note: In Firefox, temporary add-ons are removed when the browser restarts
+   - For permanent installation in Firefox, you would need to sign the extension through Mozilla Add-ons
 
----
+3. **For permanent Firefox installation**, package and sign the extension:
+   ```bash
+   # Install web-ext tool
+   npm install -g web-ext
+   
+   # Build and sign (requires Mozilla account)
+   cd surebet-helper-extension
+   web-ext sign --api-key=YOUR_KEY --api-secret=YOUR_SECRET --channel=unlisted 
+   ```
+   - Get API credentials from: https://addons.mozilla.org/developers/addon/api/key/
 
-## 📖 Usage
+## Try it
+1. Visit **https://surebet.com/valuebets**
+2. Each bet row will have a **💾 Save** button
+3. **Filter presets**: Click the bookmaker filter to open the popup - you'll see two preset buttons at the top:
+   - **⭐ My Normal List** - Apply your standard bookmaker selection
+   - **🔄 Exchanges Only** - Filter to show only betting exchanges
+4. Click Save on any bet, enter your stake amount
+5. Open the extension popup (click toolbar icon) to see all saved bets
+6. **Mark bets**: Click ✓ Won, ✗ Lost, or ○ Void buttons for each bet as they settle
+7. **Track performance**: See your running P/L and ROI at the top of the popup
+8. **View Chart**: Click 📊 View Chart to see a visual graph of your P/L vs Expected EV over time
+9. Use **Export JSON** or **Export CSV** to download, or **Clear All** to delete
+ 
+## Market Filters (on-site)
 
-### Basic Workflow
-1. **Visit** [surebet.com/valuebets](https://surebet.com/valuebets)
-2. **Click** the 💾 Save button on any bet row
-3. **Enter** your stake amount (and optional note)
-4. **Edit**: When editing a bet, use the **To Lay / To Back** toggle in the edit modal to switch the bet type (immediate visual feedback is provided). Lay odds are handled properly even when editing.
-4. **View** all saved bets by clicking the extension icon in your toolbar
-5. **Settle bets** using the ✓ Won, ✗ Lost, or ○ Void buttons
-6. **Analyze** your performance by clicking the 📊 Analysis button
-7. **Export data** using the Analysis tab options
+You can now configure Market Filters under the extension **⚙️ Settings → Market Filters**. Market filters support both **Hide** and **Highlight** modes and are applied to both:
 
-### Extension Popup (4 Buttons)
-The minimal popup provides quick access to core features:
+- Saved Bets Popup — hides or highlights saved bets by market type
+- surebet.com valuebets page — hides or highlights rows in the valuebets table
 
-- **🔍 Check Results** - Manually trigger result checking (or wait for hourly auto-check)
-- **📊 Analysis** - Opens full-screen analysis dashboard in new tab with 6 views
-- **⚙️ Settings** - Opens settings page with 6 configuration sections
-- **📥 Import** - Opens bulk import page for CSV/JSON files
+Usage:
+1. Click the extension icon → ⚙️ Settings → Market Filters
+2. Choose a preset (Asian Handicap, DNB, Cards, Goals Only, Corners Only)
+3. Set Mode: **Hide** (completely remove rows) or **Highlight** (red border/badge, see screenshot)
+4. Reload the surebet.com/valuebets page to apply filters
 
-### Analysis Dashboard (analysis.html)
-Click **📊 Analysis** to open a dedicated tab with:
+Pattern matching notes:
+- Abbreviations like `AH`, `AH1`, `AH2`, and `DNB` are matched using a lookahead regex to properly catch `AH2(+1.5)` and similar variations.
+- Words like `Asian handicap` are matched using whole-word boundaries.
+- The whitelist-first logic allows `Goals Only` and `Corners Only` to override blacklist presets.
 
-1. **📈 P/L Chart** - Interactive graph of your cumulative profit/loss
-2. **💧 Liquidity Tiers** - Bets grouped and analyzed by limit stratification
-3. **📊 Bookmaker Profiling** - Performance statistics per bookmaker
-4. **📅 Temporal Analysis** - Time-based patterns and trends
-5. **🎲 Kelly Metrics** - Fill ratio analysis (recommended vs actual stakes)
-6. **📥 Export** - Download data as JSON (with analysis) or CSV (27 columns)
+This feature was added to allow you to continue browsing the surebet table while masking out market types you do not want to see, or to highlight them for an extra layer of caution.
+   
+  For debugging CSV import issues: you can export only pending (unsettled) bets from the extension settings: **⚙️ Settings → 🗑️ Data → 🐛 Debug Export → Export Pending Bets (JSON)**. This is useful when you want to reproduce an import parser issue or inspect unsettled data.
+  
+  New: The import page includes a `🐛 Report Match Issue` button that builds a pre-filled GitHub issue with a concise summary and a clipboard-copied JSON debug payload. See `CSV_IMPORT_ISSUE_REPORTING.md` for usage and privacy notes.
 
-### Settings Tab (settings.html)
-Click **⚙️ Settings** to configure 6 sections:
+## Auto-Fill Stakes (Complete Feature - v1.0.37!)
 
-1. **💰 Commission** - Set exchange commission rates
-2. **📏 Rounding** - Enable stake rounding to nearest increment
-3. **⚡ Auto-Fill** - Configure exchanges for automatic stake input
-4. **🎲 Kelly Staking** - Bankroll, Kelly fraction, and commission accounting
-5. **🔑 API Setup** - Configure sports API keys for result checking
-6. **🗑️ Data** - Clear all saved bets (with safety confirmation)
+The extension now fully implements automatic Kelly stake calculation and filling across all exchanges using a cross-origin broker pattern:
 
-### Auto-Fill Stakes (Exchange Bets)
-When enabled, the extension automatically fills in your calculated Kelly stake after clicking a bet link:
-
-1. **Enable auto-fill** in Settings > ⚙️ Auto-Fill tab
-2. **Select exchanges** you want to use (Betfair, Smarkets, Matchbook)
-3. **Click a stake link** on surebet.com → your calculated stake will auto-populate on the betting slip
-4. **Review and place** your bet on the exchange
-
-**Supported Exchanges:**
-- Betfair ✓
-- Smarkets ✓
-- Matchbook ✓ (Back bets, with React/data-hook selectors)
-
-**Note**: Auto-fill requires the Surebet official plugin to find and add the bet first. Falls back to clipboard copy if auto-fill fails.
-
-### Bookmaker Filter Presets
-
-The extension adds quick-filter buttons to the bookmaker filter popup:
-- **⭐ My Normal List** - Your standard bookmaker selection
-- **🔄 Exchanges Only** - Filter to betting exchanges only
-
-Customize these presets in `contentScript.js` by editing the `BOOKMAKER_PRESETS` object.
-
-### Kelly Staking Configuration
-
-Configure your staking strategy in Settings > 🎲 Kelly Staking:
-
-1. **Starting Bankroll** - Your initial betting bank (automatically adjusted by P/L)
-2. **Kelly Fraction (%)** - Percentage of full Kelly to stake (25% recommended)
-3. **Commission Accounting** - Checkbox to adjust odds based on exchange commission
-
-The Kelly Criterion calculates optimal bet sizes based on odds and probability. Your extension automatically:
-- Calculates recommended stakes for every bet
-- Displays stakes on surebet.com value bet rows
-- Auto-fills stakes on betting exchanges (if enabled)
-- Tracks actual vs recommended stakes in analysis
-
----
-
-## ⚙️ Optional Features
-
-### Auto-Fill Stakes on Betting Exchanges
-
-Automatically populate betting slip stake fields after the Surebet plugin adds your bet:
-
-1. Click **⚙️ Auto-Fill** in the popup settings
+### How to use:
+1. Click the extension icon and go to **⚙️ Auto-Fill** settings
 2. Enable **"Enable automatic stake input on betting slip"**
-3. Select which exchanges to use (Betfair, Smarkets, Matchbook)
-4. When you click a stake link from surebet.com, your calculated stake will auto-fill
+3. Select which exchanges you want (Betfair, Smarkets, Matchbook, Betdaq)
+4. When browsing surebet.com, **click a stake indicator** from your bet row (e.g., the stake amount)
+5. You'll be redirected to the exchange betting slip
+6. Your calculated Kelly stake will automatically populate on the betting slip
 
-**Features:**
-- Waits for betting slip to appear after Surebet plugin finds the bet
-- Automatically detects when stake input is ready
-- Fills the correct stake input (handles back/lay bets)
-- Shows confirmation toast notification
-- Falls back to clipboard copy if auto-fill fails
-- Disabled by default for safety
+### How it works (Complete Pipeline):
+1. **Stake indicator clicked** → Broker service stores bet data (in-memory + backup storage)
+2. **Navigate to exchange** → Content script queries broker for pending bet
+3. **Broker retrieves data** → Returns cached bet data from safe background context
+4. **Kelly calculation** → Extension calculates optimal stake based on odds/probability
+5. **Auto-fill stake** → Betting slip input receives calculated amount
+6. **Validation** → Odds compared; warning shown if significantly changed
+7. **Success notification** → User sees confirmation stake was filled
+8. **You review & place** → You manually confirm odds and place the bet
+9. **Fallback chain** → If broker unavailable: Storage → Document referrer → Parent frame
 
-### Auto-Check Results
+### Supported Exchanges:
+- ✅ **Betfair** - Fully supported (v1.0+)
+- ✅ **Smarkets** - Complete (v1.0.37: Broker + Kelly calculation)
+- ✅ **Matchbook** - Fully supported (v1.0+)
+- ✅ **Betdaq** - Fully supported (v1.0+)
 
-The extension can automatically verify bet results using free sports APIs. This is completely optional — manual settlement always works.
+### Settings:
+- **Per-exchange toggle**: Enable/disable for each exchange individually
+- **Disabled by default**: Must explicitly enable for safety
+- **Timeout**: Waits up to 10 seconds for betting slip to appear
+- **Odds Validation**: Warns if odds change after you clicked the bet
 
-### Supported APIs
-- **API-Football** (soccer/football) - 100 requests/day free
-- **The Odds API** (multiple sports) - 500 requests/month free
+### Odds Validation ⚠️
+The extension compares the odds from your surebet.com link with the current odds on the betting slip:
+- If odds differ slightly (±0.01), auto-fill proceeds silently
+- If odds change significantly, you'll see a warning notification but auto-fill still happens
+- This helps you catch when odds have shifted before placing the bet
 
-### Setup Guide
-See **[API_SETUP.md](surebet-helper-extension/API_SETUP.md)** for step-by-step instructions on:
-- Getting free API keys
-- Configuring the extension
-- Testing automatic result checking
-
----
-
-## 📊 What Gets Saved
-
+## What gets saved
 Each bet record includes:
-- **Timestamp** - When you saved it
-- **Bookmaker** - Betting site (e.g., Bet365, Betfair)
-- **Sport** - Sport type
-- **Event** - Match/game name
-- **Tournament** - League/competition
-- **Market** - Bet type (e.g., "Home", "Over 2.5")
-- **Odds** - Decimal odds value
-- **Probability** - Calculated probability %
-- **Overvalue** - Value edge %
-- **Stake** - Your bet amount
-- **Potential Return** - Stake × Odds
-- **Profit** - Potential Return - Stake
-- **Expected Value (EV)** - Theoretical expected profit
-- **Status** - Pending/Won/Lost/Void
-- **Settled At** - Settlement timestamp
-- **Actual P/L** - Real profit/loss after settlement
-- **Note** - Optional personal note
-- **URL** - Link back to the original page
-
----
-
-## 🧮 Understanding Expected Value (EV)
-
-Expected Value is the theoretical average profit you'd make on a bet if placed many times:
-
-```
-EV = (Win Probability × Win Amount) - (Lose Probability × Stake)
-```
-
-**Example:** $10 stake at 2.50 odds with 41.51% probability:
-```
-EV = (0.4151 × $10 × 2.50) - (0.5849 × $10)
-EV = $10.38 - $5.85 = +$4.53
-```
-
-### Summary Metrics
-- **Total EV**: Sum of EV for all bets (theoretical expected profit)
-- **P/L**: Actual profit/loss for settled bets
-- **Expected (Settled)**: Sum of EV for settled bets only
-- **vs Expected**: Difference between actual and expected (luck factor)
-
-Over 100+ bets, actual results should approach expected value if probabilities are accurate.
-
----
-
-## 🛠️ Development
-
-### Project Structure
-```
-surebet-helper-extension/
-├── manifest.json              # Extension configuration (Manifest V3)
-├── contentScript.js           # Injects save buttons on surebet.com + auto-fill logic
-├── background.js              # Service worker for exports and auto-checking
-├── apiService.js              # Sports result API integration
-├── popup.html/js              # Minimal 4-button popup interface
-├── analysis.html/js           # Full-screen analysis dashboard
-├── settings.html/js           # Consolidated settings interface
-├── import.html/js             # Bulk import functionality
-├── icons/                     # Extension icons
-└── README.md                  # This file
-```
-
-### Recent Major Changes (v1.0.57)
-
-#### 🎉 UI Redesign - Tab-Based Interface
-- **Removed**: Crowded inline modals from popup (Commission, Rounding, Auto-Fill panels)
-- **Removed**: Floating Kelly Stake Helper panel from surebet.com
-- **Removed**: Chart and liquidity modals from popup
-- **Added**: Minimal 4-button popup (Check Results, Analysis, Settings, Import)
-- **Added**: Full-screen Analysis tab with 6 views and comprehensive export options
-- **Added**: Consolidated Settings tab with 6 configuration sections
-- **Moved**: Kelly staking configuration from floating panel to Settings tab
-
-#### 🔧 Technical Improvements
-- Fixed Manifest V3 CSP violations (removed inline `onclick` handlers)
-- API link buttons now use `api.tabs.create()` for cross-browser compatibility
-- All event listeners wrapped in null-guard checks
-- Fixed indentation issues in event handler callbacks
-- Added hash-based routing for settings sections (#commission, #kelly, #api, etc.)
-- Disabled floating staking panel injection from contentScript.js
- - Migration fix: `isLay` backfilling now only runs when the property is undefined so explicit user edits are preserved
-
-#### 📊 Analytics Enhancements
-- CSV export now includes 27 detailed columns
-- Added Kelly fill ratio analysis
-- Added liquidity tier analysis
-- Added bookmaker performance profiling
-- Added temporal trend analysis
-- Real-time P/L summary in Kelly settings
-
-### Contributing
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on:
-- Reporting bugs
-- Suggesting features
-- Submitting pull requests
-- Code style and testing
-
-### Local Development
-1. Clone the repository
-2. Load the extension in developer mode (see Installation above)
-3. Make your changes
-4. Reload the extension to test
-5. Submit a pull request
-
-### Version History
-See [CHANGELOG.md](CHANGELOG.md) for complete version history and detailed changes.
-
----
-
-## 📦 Distribution
-
-To create a distribution package for Chrome Web Store or Firefox Add-ons:
-
+## Distribution Package
+## Auto-Fill Stakes (Complete Feature)
+To distribute the extension or prepare for Chrome Web Store submission:
+### Recent Major Changes (v1.0.82.2)
 ```powershell
-# Windows PowerShell
+# PowerShell (Windows) - Create distribution ZIP
 Compress-Archive -Path .\surebet-helper-extension\* -DestinationPath .\surebet-helper-extension.zip -Force
 ```
 
 ```bash
-# Linux/Mac
+# Linux/Mac - Create distribution ZIP
 cd surebet-helper-extension
-zip -r ../surebet-helper-extension.zip . -x "*.git*"
+zip -r ../surebet-helper-extension.zip . -x "*.git*" -x "*node_modules*"
 ```
 
+### Chrome Web Store Publishing
+1. Create a developer account at https://chrome.google.com/webstore/devcenter/
+2. Pay one-time $5 registration fee
+3. Upload the ZIP file created above
+4. Fill in store listing details (description, screenshots, etc.)
+5. Submit for review (usually approved within a few days)
+
+### Firefox Add-ons Publishing
+1. Create an account at https://addons.mozilla.org/
+2. Submit your extension for review at https://addons.mozilla.org/developers/
+3. Choose self-distribution or listed in Mozilla Add-ons store
+4. Review process typically takes a few days= (Probability% / 100 × Stake × Odds) - ((1 - Probability% / 100) × Stake)
+```
+
+**Example:** Stake 10 at odds 2.5 with 41.51% probability:
+```
+EV = (0.4151 × 10 × 2.5) - (0.5849 × 10)
+EV = 10.3775 - 5.849 = +4.53
+```
+
+### Summary Bar Metrics:
+- **Total EV**: Sum of EV for ALL bets (pending + settled) - your theoretical expected profit
+- **P/L**: Actual profit/loss for settled bets only
+- **Expected (Settled)**: Sum of EV for settled bets only
+- **vs Expected**: Difference between actual P/L and expected (settled bets)
+
+### What This Means:
+- **Total EV** tracks your overall edge - if positive, your bets have theoretical value
+- **vs Expected** shows if you're running lucky (+) or unlucky (-)
+- Over 100+ bets, actual should approach expected if probabilities are accurate
+
+## Package (PowerShell — Windows)
+```powershell
+# Run in the parent folder to create a zip:
+Compress-Archive -Path .\surebet-helper-extension\* -DestinationPath .\surebet-helper-extension.zip -Force
+```
+
+## Technical details
+- `manifest.json` - Manifest V3 configuration (compatible with Chrome, Edge, Brave, and modern Firefox)
+- `contentScript.js` - Site-specific injection for surebet.com (parses DOM/JSON data)
+- `background.js` - Service worker that handles export downloads, bet clearing, and auto-checking results
+- `apiService.js` - ES module for sports result lookups via external APIs
+- `popup.html` + `popup.js` - Display saved bets with rich formatting, charts, and management tools
+- Uses `chrome.storage.local` for persistence across browser sessions
+- MutationObserver monitors for dynamically added bet rows on surebet.com
+- Alarm API schedules hourly automatic result checking
+
+## API Setup (Optional - Automatic Result Checking)
+
+The extension can automatically check bet results using free sports APIs. This is completely optional - you can still settle bets manually if you prefer.
+
+### Features:
+- **30-Minute Delay**: Only checks results 30 minutes after event ends
+- **Smart Retries**: Maximum 5 attempts with exponential backoff (1hr, 2hr, 4hr, 8hr, 24hr)
+- **Graceful Failure**: After 5 failed attempts, bet stays pending for manual settlement
+- **Hourly Background Checks**: Automatically checks eligible pending bets
+- **Manual Check Button**: Use "🔍 Check Results" button anytime
+
+### Supported APIs:
+- **API-Football** (for football/soccer) - 100 requests/day free
+- **The Odds API** (for other sports) - 500 requests/month free
+
+### Supported Markets:
+- **Football/Soccer**: 1X2, Over/Under goals, Asian Handicap, Cards, Lay bets
+- **Other Sports**: Tennis, Basketball, American Football, Ice Hockey, Baseball
+
+### Setup Instructions:
+See **[API_SETUP.md](API_SETUP.md)** for detailed step-by-step instructions on:
+1. Getting free API keys
+2. Configuring the extension
+3. Testing automatic result checking
+4. Troubleshooting
+
+**Note:** API setup is optional. If you don't configure APIs, you can still settle bets manually using the Won/Lost/Void buttons.
+
+## Bookmaker Filter Presets
+
+The extension adds two quick-filter buttons at the top of the bookmaker filter popup:
+
+### Preset Configuration
+Edit the `BOOKMAKER_PRESETS` object in `contentScript.js` to customize your presets:
+
+```javascript
+const BOOKMAKER_PRESETS = {
+  normal: [
+    '10Bet', '888sport', 'Bet365', 'Betfair', 'Betway', 
+    'Bwin', 'Ladbrokes', 'Paddy Power', 
+    'Unibet', 'BetVictor', 'Betfred'
+  ],
+  exchanges: [
+    'Betfair', 'Betdaq', 'Smarkets', 'Matchbook'
+  ]
+};
+```
+
+### Matching Rules
+- **"Betfair"** matches only "Betfair 5%" (main version without country code)
+- **"Betfair (AU)"** matches only "Betfair (AU) 5%" (Australian version)
+- **"Betfair (IT)"** matches only "Betfair (IT) 5%" (Italian version)
+- Country-specific versions are automatically excluded unless explicitly specified
+
+This ensures you only select the exact bookmaker versions you want, without accidentally selecting all regional variants.
+
+## Next steps
+- Test on surebet.com/valuebets
+- Customize your bookmaker presets in `contentScript.js`
+- Verify all fields are captured correctly
+- (Optional) Set up free APIs for automatic result checking - see [API_SETUP.md](API_SETUP.md)
+- Try exporting CSV to validate data structure
+- Consider adding filters/search in popup for large bet lists
+
 ---
 
-## 🐛 Troubleshooting
+## Contributing DOM Structures for New Exchanges
 
-### Save button not appearing
-- Ensure you're on surebet.com/valuebets
-- Check browser console for errors
-- Try reloading the page
+We rely on community contributions for maintaining accurate DOM selectors for exchange betting slips. To make it easy, we've added a helper script and a GitHub issue template you can use when submitting a new exchange or fixing selectors.
 
-### Bets not saving
-- Check extension popup for saved bets
-- Open browser console (F12) and check for errors
-- Verify extension has storage permissions
+### Quick & Recommended (Best) Way — Use the Console Helper Script
 
-### Auto-check not working
-- Verify API keys are configured (see API_SETUP.md)
-- Check that events have ended (30 min delay)
-- Look for error messages in extension popup
+1. Open the betting slip for the exchange you want to support (e.g., Betfair) in your browser.
+2. Open DevTools (F12) → Console.
+3. Copy the helper script from `tools/collect_betslip_info.js` in this repo and paste it into the Console, then press Enter.
+   - The script will collect visible stake inputs, betting slip containers, and relevant data attributes.
+   - It will copy a JSON payload to your clipboard containing the page URL, detected inputs, container HTML, data attributes, and your user agent.
+4. Create a new GitHub issue using the **Add Exchange Support** template (click "New issue" → "Add Exchange Support") and paste the copied JSON into the "Console output" field.
 
-For more help, see [TESTING.md](surebet-helper-extension/TESTING.md) or open an issue.
+#### Bookmarklet (one-click issue creation)
+
+If you prefer a one-click approach, use our bookmarklet generator to create a bookmark that collects the necessary JSON and opens a prefilled GitHub issue:
+
+1. Open `surebet-helper-extension/tools/create_issue_bookmarklet.js` in this repo and copy the single `javascript:(function(){...})();` string printed by the script.
+2. Create a new browser bookmark, paste the string into the bookmark URL.
+3. When on an exchange's betting slip, click the bookmark to auto-collect DOM data and open a new GitHub issue with the JSON and HTML prefilled.
+
+Note: If the collected JSON is too large, the issue page will open with empty fields and you'll be prompted to paste the JSON manually.
+
+### Manual Alternative
+
+If you prefer to do this manually, or the helper script doesn’t run, follow these steps:
+
+1. **Navigate to the betting slip** on the exchange you want to support.
+2. **Open DevTools** (F12 on most browsers).
+3. **Run the diagnostic snippet** in the Console tab to identify key elements:
+
+```javascript
+// Find betting slip containers
+console.log('=== BETTING SLIP CONTAINERS ===');
+document.querySelectorAll('[class*="slip"], [class*="bet"], [class*="order"], [class*="panel"], .betslip-container').forEach(el => {
+  if (el.className && el.offsetHeight > 50) {
+    console.log('Container:', el.className, el);
+  }
+});
+
+// Find all stake inputs (numbers, text fields, or Betfair-style inputs)
+console.log('\n=== STAKE INPUT FIELDS ===');
+document.querySelectorAll('input[type="number"], input[type="text"], input.betslip-size-input, input[bf-number-restrict]').forEach(el => {
+  if (el.offsetHeight > 0) {
+    console.log('Input:', {
+      type: el.type || '',
+      className: el.className || '',
+      placeholder: el.placeholder || '',
+      name: el.name || '',
+      id: el.id || '',
+      value: el.value || '',
+      parent: el.parentElement?.className || ''
+    }, el);
+  }
+});
+
+// Data attributes useful for building selectors
+console.log('\n=== DATA ATTRIBUTES ===');
+document.querySelectorAll('[data-test], [data-testid], [data-test-id]').forEach(el => {
+  if (el.offsetHeight > 0) {
+    console.log('Data:', el.dataset, el);
+  }
+});
+```
+
+4. **Right-click the stake input field** → Inspect Element, then copy the HTML for that input element and at least 2–3 parent levels up. Include all class names and data attributes.
+5. **Create a new GitHub issue** using the Add Exchange Support template and include:
+   - Exchange name and domain
+   - Browser and OS used for testing
+   - Copied JSON from the helper script (preferred) or the console output
+   - Full HTML of the stake input and parent containers
+   - Screenshot showing the input in the betting slip (recommended)
+
+### Example Submission
+
+When opening an issue, the template will prompt you for the required fields. Here's an example:
+
+```markdown
+## Add Support for Betdaq
+
+**Console JSON:**
+```
+{ "url":"https://...", "timestamp":"...", "inputs":[{...}], "containers":[...], "dataAttributes":[...], "userAgent":"..." }
+```
+
+**HTML Structure:**
+```html
+<div class="betting-slip__container">
+  <div class="betting-slip__form">
+    <input type="text" class="input-field stake-input" placeholder="Enter stake">
+  </div>
+</div>
+```
+
+**Browser:** Firefox 120 on Windows
+
+**Screenshot:** [attach screenshot]
+```
+
+### What Happens Next
+
+1. A developer will review your issue.
+2. We’ll add or refine selectors in `BETTING_SLIP_SELECTORS` in `contentScript.js`.
+3. We’ll test and commit changes in an upcoming release.
+4. You're credited in `UPGRADE_NOTES.md` if you wish to be.
+
+### Maintainer checklist (for devs)
+
+- Add new selectors to `BETTING_SLIP_SELECTORS` in `contentScript.js` using the same pattern as other exchanges (specific selectors first, fallbacks last).
+- Verify the selector doesn't match elements inside `.surebet-helper-stake-panel` and that `findElement()` will skip our UI components.
+- Use `tools/collect_betslip_info.js` to reproduce the issue and confirm the selector targets the correct input on desktop and mobile viewports.
+- Test auto-fill by enabling the Auto-Fill feature and reproducing the save → redirect flow from surebet.com to the exchange.
+- Commit and reference the issue in the PR description for traceability.
+
+### Developer tools
+
+In `surebet-helper-extension/tools` you'll find two helper utilities:
+- `collect_betslip_info.js` — paste into an exchange betting slip console to collect DOM data (JSON copied to clipboard)
+- `bookmarklet-demo.html` — a demo page that provides a bookmarklet string and instructions for creating a one-click issue bookmarklet
+
+We recommend using the bookmarklet for quick issue creation and the console helper when you need the full JSON payload for maintainers.
+
+### Why This Helps
+
+- Auto-fill is more reliable with precise selectors.
+- Sites change frequently; community contributions help keep support working.
+- You get faster support for sites you use often.
 
 ---
 
-## 📄 License
+Thank you for helping us keep Surebet Helper working across exchanges!
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-## 🙏 Acknowledgments
-
-- Built for the value betting community
-- Uses free sports data from API-Football and The Odds API
-- Compatible with Manifest V3 for modern browsers
-
----
-
-## 🔗 Links
-
-- [Installation Guide](surebet-helper-extension/INSTALL.md)
-- [API Setup Guide](surebet-helper-extension/API_SETUP.md)
-- [Testing Guide](surebet-helper-extension/TESTING.md)
-- [Contributing Guidelines](CONTRIBUTING.md)
-- [Report Issues](https://github.com/tacticdemonic/surebet-helper-extension/issues)
-
----
-
-**Made with ❤️ for value bettors**
 
 
