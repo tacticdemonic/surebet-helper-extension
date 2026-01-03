@@ -1565,6 +1565,101 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // ========== CLV ELIGIBILITY VALIDATION ==========
+  function checkClvEligibility(bet) {
+    // Step 1: Check if CLV tracking is enabled
+    const clvEnabled = cachedClvSettings?.enabled ?? false;
+    if (!clvEnabled) {
+      return {
+        eligible: false,
+        reason: 'CLV: Disabled',
+        details: 'Settings',
+        tooltip: 'CLV tracking is disabled in settings'
+      };
+    }
+
+    // Step 2: Check sport type (case-insensitive)
+    if (!bet.sport) {
+      return {
+        eligible: false,
+        reason: 'CLV: N/A',
+        details: 'No sport',
+        tooltip: 'Sport information missing'
+      };
+    }
+
+    const sportLower = bet.sport.toLowerCase().trim();
+    const isFootball = sportLower === 'football' || sportLower === 'soccer';
+    
+    if (!isFootball) {
+      return {
+        eligible: false,
+        reason: 'CLV: N/A',
+        details: bet.sport,
+        tooltip: 'CLV tracking only available for Football bets'
+      };
+    }
+
+    // Step 3: Check if tournament is known to be unsupported
+    if (bet.tournament && typeof isUnsupportedTournament === 'function') {
+      if (isUnsupportedTournament(bet.tournament)) {
+        return {
+          eligible: false,
+          reason: 'CLV: N/A',
+          details: 'Unsupported league',
+          tooltip: `"${bet.tournament}" is not supported by football-data.co.uk (no historical odds data available)`
+        };
+      }
+    }
+
+    // Step 4: Check if tournament can be mapped to a league code
+    if (bet.tournament && typeof mapTournamentToLeague === 'function') {
+      const leagueCode = mapTournamentToLeague(bet.tournament);
+      if (!leagueCode) {
+        return {
+          eligible: false,
+          reason: 'CLV: N/A',
+          details: 'League not mapped',
+          tooltip: `Tournament "${bet.tournament}" cannot be mapped to a football-data.co.uk league code`
+        };
+      }
+    }
+
+    // Step 4: Check if market type is supported
+    if (bet.market) {
+      // Ensure the CLV available pattern is compiled
+      let clvPattern = COMPILED_MARKET_PATTERNS?.clv_available?.pattern;
+      
+      if (!clvPattern) {
+        // Fallback: compile the CLV pattern manually if not available
+        const clvPreset = MARKET_FILTER_PRESETS.clv_available;
+        if (clvPreset) {
+          clvPattern = new RegExp(`\\b(${clvPreset.keywords.join('|')})\\b`, 'i');
+        }
+      }
+      
+      if (clvPattern) {
+        const marketLower = bet.market.toLowerCase();
+        if (!clvPattern.test(marketLower)) {
+          return {
+            eligible: false,
+            reason: 'CLV: N/A',
+            details: 'Market not supported',
+            tooltip: `Market "${bet.market}" not supported (only 1X2, O/U 2.5, Asian Handicap available from CSV data)`
+          };
+        }
+      }
+    }
+
+    // All checks passed - CLV should be available
+    return {
+      eligible: true,
+      reason: null,
+      details: null,
+      tooltip: null
+    };
+  }
+
   // ========== CLV BADGE RENDERING ==========
   function renderClvBadge(bet, betKey) {
     // Only show CLV for settled bets
@@ -1603,9 +1698,13 @@ document.addEventListener('DOMContentLoaded', () => {
       return ` | <strong>CLV:</strong> <span style="color:${clvColor};font-weight:600" title="${tooltip}">${sourceLabel} ${clvSign}${clv.toFixed(2)}%</span>`;
     }
 
-    // Check sport type - only football supported for CSV
-    if (bet.sport && bet.sport !== 'Football') {
-      return ` | <span style="color:#6c757d;font-size:10px;padding:2px 6px;background:#f8f9fa;border-radius:3px" title="CLV tracking only available for Football bets">CLV: N/A (${bet.sport})</span>`;
+    // Check sport type and validate CLV eligibility using proper checks
+    const clvEligibility = checkClvEligibility(bet);
+    
+    if (!clvEligibility.eligible) {
+      const reason = clvEligibility.reason || 'Not supported';
+      const details = clvEligibility.details || bet.sport;
+      return ` | <span style="color:#6c757d;font-size:10px;padding:2px 6px;background:#f8f9fa;border-radius:3px" title="${clvEligibility.tooltip || 'CLV not available for this bet'}">${reason} (${details})</span>`;
     }
 
     // Check if CLV fetch failed (exceeded retries)
@@ -1824,6 +1923,7 @@ document.addEventListener('DOMContentLoaded', () => {
       document.querySelector('#edit-form [name="odds"]').value = bet.odds || '';
       document.querySelector('#edit-form [name="probability"]').value = bet.probability || '';
       document.querySelector('#edit-form [name="stake"]').value = bet.stake || '';
+      document.querySelector('#edit-form [name="closingOdds"]').value = bet.closingOdds || '';
       document.querySelector('#edit-form [name="isLay"]').checked = bet.isLay || false;
       document.querySelector('#edit-form [name="note"]').value = bet.note || '';
 
@@ -1864,6 +1964,19 @@ document.addEventListener('DOMContentLoaded', () => {
       // Update fields
       Object.assign(bet, updatedFields);
       console.log('Updated bet:', bet);
+
+      // Recalculate CLV if closing odds changed
+      if (updatedFields.closingOdds !== undefined) {
+        const closingOdds = parseFloat(updatedFields.closingOdds);
+        const openingOdds = parseFloat(bet.odds);
+        
+        if (closingOdds && closingOdds > 0 && openingOdds && openingOdds > 0) {
+          bet.closingOdds = closingOdds;
+          bet.clv = ((openingOdds / closingOdds) - 1) * 100;
+          bet.clvSource = 'manual';
+          console.log('Recalculated CLV:', { openingOdds, closingOdds, clv: bet.clv });
+        }
+      }
 
       // Recalculate EV and overvalue if odds/probability/stake changed
       if (updatedFields.odds || updatedFields.probability || updatedFields.stake) {
@@ -3169,6 +3282,13 @@ document.addEventListener('DOMContentLoaded', () => {
         isLay: isLay,
         note: formData.get('note')
       };
+
+      // Only include closingOdds if user actually entered a value
+      // Empty field = keep existing value (don't clear)
+      const closingOddsValue = formData.get('closingOdds');
+      if (closingOddsValue !== null && closingOddsValue !== undefined && closingOddsValue !== '') {
+        updatedFields.closingOdds = parseFloat(closingOddsValue);
+      }
 
       console.log('✏️ Edit form submitted with fields:', updatedFields);
       saveEditedBet(betId, updatedFields);

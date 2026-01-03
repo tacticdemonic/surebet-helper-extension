@@ -348,6 +348,11 @@ function matchBetToCSVRow(bet, csvRows) {
   let bestMatch = null;
   let bestScore = 0;
   
+  if (csvRows.length === 0) {
+    console.warn(`[CSV CLV] ⚠️ CSV has no rows to match against for: ${bet.event}`);
+    return null;
+  }
+  
   for (const row of csvRows) {
     if (!row.HomeTeam || !row.AwayTeam || !row.DateISO) continue;
     
@@ -387,6 +392,8 @@ function matchBetToCSVRow(bet, csvRows) {
   // Require minimum 50% confidence (lowered from 70% to capture more valid matches)
   if (bestScore < 0.50) {
     console.warn(`[CSV CLV] ⚠️ Low confidence match (${(bestScore * 100).toFixed(1)}%) for: ${bet.event}`);
+    console.warn(`[CSV CLV] ⚠️ Best match was: "${bestMatch?.HomeTeam} vs ${bestMatch?.AwayTeam}" on ${bestMatch?.DateISO}`);
+    console.warn(`[CSV CLV] ⚠️ Parsed teams: Home="${homeTeam}", Away="${awayTeam}"`);
     return null;
   }
   
@@ -616,17 +623,22 @@ async function fetchClvForBet(bet) {
     return { error: 'non_football_sport' };
   }
   
-  // 2. Check if tournament is known to be unsupported
-  if (typeof isUnsupportedTournament === 'function' && isUnsupportedTournament(bet.tournament)) {
-    console.log(`[CSV CLV] ℹ️ Tournament "${bet.tournament}" is not covered by CSV data (international/cup competition)`);
-    return { error: 'league_not_supported', message: 'International/cup competitions not covered' };
+  // 2. Check if tournament is known to be unsupported (no CSV data available)
+  if (isUnsupportedTournament(bet.tournament)) {
+    console.warn(`[CSV CLV] ⚠️ Unsupported tournament: ${bet.tournament}`);
+    return { 
+      error: 'league_not_supported', 
+      message: 'Tournament not supported by football-data.co.uk', 
+      details: { tournament: bet.tournament, event: bet.event } 
+    };
   }
   
   // 3. Map tournament to league code
   const leagueCode = mapTournamentToLeague(bet.tournament);
   if (!leagueCode) {
     console.warn(`[CSV CLV] ⚠️ Tournament "${bet.tournament}" not mapped to CSV league`);
-    return { error: 'league_not_supported', message: 'League mapping not found' };
+    console.warn(`[CSV CLV] ℹ️ Event: ${bet.event}`);
+    return { error: 'league_not_supported', message: 'League mapping not found', details: { tournament: bet.tournament, event: bet.event } };
   }
   
   console.log(`[CSV CLV] ✅ Mapped "${bet.tournament}" → ${leagueCode}`);
@@ -658,8 +670,9 @@ async function fetchClvForBet(bet) {
   // 6. Match bet to CSV row
   const match = matchBetToCSVRow(bet, csvRows);
   if (!match) {
-    console.warn(`[CSV CLV] ⚠️ No match found in CSV for: ${bet.event}`);
-    return { error: 'match_not_found' };
+    console.warn(`[CSV CLV] ⚠️ No match found in CSV for: ${bet.event} (${bet.tournament})`);
+    console.warn(`[CSV CLV] ⚠️ Searched ${csvRows.length} rows in ${leagueCode} ${season}`);
+    return { error: 'match_not_found', details: { event: bet.event, tournament: bet.tournament, league: leagueCode } };
   }
   
   // 7. Extract closing odds (pass full bet object for market detection)
